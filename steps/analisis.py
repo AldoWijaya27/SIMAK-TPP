@@ -1,0 +1,241 @@
+import os
+import re
+import shutil
+from datetime import datetime
+import pdfplumber
+
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill, Border, Side
+
+from Aplikasi.steps.work_calendar import WorkCalendar, parse_tanggal_indonesia
+
+
+# =========================================================
+# FUNGSI GLOBAL (WAJIB DI LUAR)
+# =========================================================
+def klasifikasi_keterlambatan(jam, tanggal, kalender):
+
+    if not jam or not tanggal:
+        return None
+
+    jam_norm = kalender.get_jam_masuk(tanggal)
+
+    jam_dt = datetime.combine(tanggal, jam.time())
+    jam_norm_dt = datetime.combine(tanggal, jam_norm)
+
+    selisih_menit = (jam_dt - jam_norm_dt).total_seconds() / 60
+
+    if selisih_menit <= 0:
+        return None
+    elif selisih_menit <= 15:
+        return "<15"
+    elif selisih_menit < 31:
+        return "<30"
+    elif selisih_menit <= 60:
+        return "<60"
+    else:
+        return ">60"
+
+
+# =========================================================
+# ANALISIS KEHADIRAN
+# =========================================================
+def analisis_kehadiran(dir_rekap, template_excel, output_excel, log, json_kalender_kerja=""):
+
+    kalender = WorkCalendar(json_kalender_kerja)
+
+    def parse_jam(teks):
+        if not teks:
+            return None
+
+        # PDF kadang pakai titik
+        teks = re.sub(r"[.,]", ":", teks.strip())
+
+        try:
+            return datetime.strptime(teks, "%H:%M:%S")
+        except:
+            return None
+
+    def is_zero_or_missing(value):
+        if not value:
+            return True
+        value = value.replace(",", ".").strip()
+        try:
+            return float(value) == 0.0
+        except:
+            return True
+    
+    def durasi_adalah_nol(isi):
+
+        # contoh pada PDF: 6.5   0,00   0.00
+        durasi_match = re.findall(r"\d{1,2}[.,]\d{1,2}", isi)
+
+        if not durasi_match:
+            return True  # tidak ada durasi → anggap tidak hadir
+
+        # biasanya angka terakhir adalah durasi kerja
+        durasi_str = durasi_match[-1].replace(",", ".")
+
+        try:
+            return float(durasi_str) == 0.0
+        except:
+            return True
+        
+    # === BACA PDF ===
+    hasil_rekap = {}
+
+    for root, dirs, files in os.walk(dir_rekap):
+        for file in files:
+
+            if not file.lower().endswith(".pdf"):
+                continue
+
+            nama = os.path.splitext(file)[0].strip()
+            file_path = os.path.join(root, file)
+
+            with pdfplumber.open(file_path) as pdf:
+                text = "\n".join([p.extract_text() or "" for p in pdf.pages])
+
+            # normalisasi
+            text = re.sub(r"\n+", "\n", text).strip()
+
+            # =====================================================
+            # DETEKSI TANGGAL INDONESIA
+            # =====================================================
+            tanggal_regex = r"(\d{1,2}\s+(?:Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+20\d{2})"
+
+            # Normalisasi spasi di tanggal agar "10 April 2026" dan "10 April\n2026"
+            # dianggap sama, supaya Total HK tidak bertambah hanya karena format teks PDF.
+            tanggal_list_raw = re.findall(tanggal_regex, text)
+            tanggal_list = [re.sub(r"\s+", " ", t.strip()) for t in tanggal_list_raw]
+            tanggal_unik = list(dict.fromkeys(tanggal_list))
+
+            bagian = re.split(tanggal_regex, text)
+
+            blok_tanggal = {}
+            for i in range(1, len(bagian), 2):
+                tanggal_raw = bagian[i]
+                tanggal = re.sub(r"\s+", " ", tanggal_raw.strip())
+                isi = bagian[i+1] if i+1 < len(bagian) else ""
+
+                # Jika tanggal yang sama muncul lagi (mis. di keterangan WFH),
+                # gabungkan isi-nya supaya jam & durasi tidak hilang dan tidak terbaca TMK.
+                if tanggal in blok_tanggal:
+                    blok_tanggal[tanggal] += " " + isi
+                else:
+                    blok_tanggal[tanggal] = isi
+
+            keterlambatan = {"<15": 0, "<30": 0, "<60": 0, ">60": 0}
+            tmk = 0
+
+            # =====================================================
+            # PROSES PER TANGGAL
+            # =====================================================
+            for tgl, isi in blok_tanggal.items():
+                isi = re.split(r"Total\s*\(Dalam", isi, flags=re.IGNORECASE)[0]
+                # konversi "18 Februari 2026" -> date
+                tanggal_obj = parse_tanggal_indonesia(tgl)
+                if tanggal_obj is None:
+                    continue
+
+                # abaikan dinas luar, cuti dll
+                isi_low = isi.lower()
+                if any(x in isi_low for x in ["dinas luar", "tubel", "tubbel", "cuti", "banding"]):
+                    continue
+
+                # =================================================
+                # CARI JAM MASUK (AMBIL WAKTU PERTAMA SAJA)
+                # =================================================
+                jam_masuk = None
+                jm = re.search(r"(\d{2}:\d{2}:\d{2})", isi)
+
+                if jm:
+                    jam_masuk = parse_jam(jm.group(1))
+
+                # CARI DURASI
+                dur = re.search(r"(\d{1,2}[.,]\d{1,2})\s+(\d{1,2}[.,]\d{1,2})", isi)
+                durasi = None
+                if dur:
+                    durasi = dur.group(2).replace(",", ".")
+                
+                if not jam_masuk or is_zero_or_missing(durasi):
+                    tmk += 1
+                    continue
+
+                if durasi_adalah_nol(isi):
+                    tmk += 1
+                    continue
+
+                # =================================================
+                # HITUNG KETERLAMBATAN BERDASARKAN KALENDER
+                # =================================================
+                kategori = klasifikasi_keterlambatan(jam_masuk, tanggal_obj, kalender)
+
+                if kategori:
+                    keterlambatan[kategori] += 1
+
+            hasil_rekap[nama] = {
+                "<15": keterlambatan["<15"],
+                "<30": keterlambatan["<30"],
+                "<60": keterlambatan["<60"],
+                ">60": keterlambatan[">60"],
+                "TMK": tmk,
+                "HariKerja": len(tanggal_unik)
+            }
+
+    # =====================================================
+    # TULIS EXCEL
+    # =====================================================
+    shutil.copy(template_excel, output_excel)
+
+    wb = load_workbook(template_excel, keep_links=True)
+    ws = wb["DISIPLIN"]
+
+    kolom = {}
+    for col in range(1, ws.max_column+1):
+        val = ws.cell(1, col).value
+        if val:
+            kolom[val.strip()] = col
+
+    map_col = {
+        "Nama": kolom.get("NAMA"),
+        "TMK": kolom.get("TMK"),
+        "<15": kolom.get("< 15 menit"),
+        "<30": kolom.get("< 30 menit"),
+        "<60": kolom.get("< 60 menit"),
+        ">60": kolom.get("> 60 menit"),
+        "HariKerja": kolom.get("Total HK")
+    }
+
+    red = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+    border = Border(
+        left=Side(border_style="thin", color="000000"),
+        right=Side(border_style="thin", color="000000"),
+        top=Side(border_style="thin", color="000000"),
+        bottom=Side(border_style="thin", color="000000"),
+    )
+
+    for row in range(2, ws.max_row+1):
+        nama = ws.cell(row=row, column=map_col["Nama"]).value
+        if not nama:
+            continue
+
+        nama = nama.strip()
+        if nama in hasil_rekap:
+            data = hasil_rekap[nama]
+
+            for k in ["<15", "<30", "<60", ">60", "TMK"]:
+                ws.cell(row, map_col[k]).value = data[k]
+                cell = ws.cell(row, map_col[k])
+
+                if data[k] > 0:
+                    cell.fill = red
+
+                cell.border = border
+
+            ws.cell(row, map_col["HariKerja"]).value = data["HariKerja"]
+
+    wb.save(output_excel)
+    wb.close()
+
+    log("Analisis selesai")

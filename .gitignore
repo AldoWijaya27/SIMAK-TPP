@@ -1,0 +1,64 @@
+# ==============================
+# 1. Python & Environment
+# ==============================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+.env
+
+# ==============================
+# 2. PyInstaller (Hasil Build .exe)
+# ==============================
+build/
+dist/
+*.spec
+*.exe
+
+# ==============================
+# 3. Direktori & File Output Proyek Anda
+# ==============================
+# Folder hasil generate dan unduhan
+/TEMP/
+/OUTPUT/
+/REKAP KEHADIRAN/
+/PERHITUNGAN TPP/
+/REKAP SIKAP/
+
+# File log dan file sementara
+log.txt
+*.log
+single.csv
+
+# ==============================
+# 4. OS & IDE (Editor)
+# ==============================
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Mac (jika ada tim yang pakai Mac)
+.DS_Store
+
+# VS Code & PyCharm
+.vscode/
+.idea/
+
+# ==============================
+# 5. File Temporary & MS Office
+# ==============================
+# Mengabaikan file sementara (lock files) dari Word/Excel
+~$*
+~*.tmp
+*.tmp
+
+# (Pastikan baris ini juga sudah ada di bagian Python di atas)
+__pycache__/
+*.py[cod]
