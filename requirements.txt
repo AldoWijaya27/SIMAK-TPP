@@ -1,0 +1,8 @@
+pandas
+openpyxl
+pywin32
+PyMuPDF
+selenium
+webdriver-manager
+pdfplumber
+pyinstaller
