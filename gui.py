@@ -70,19 +70,19 @@ class App:
             )
         ).pack()
 
-        tk.Label(right_frame, text="Template JSON").pack()
-        self.entry_template_json = tk.Entry(right_frame, width=60)
-        self.entry_template_json.pack()
+        tk.Label(right_frame, text="Data Pegawai Excel").pack()
+        self.entry_data_pegawai = tk.Entry(right_frame, width=60)
+        self.entry_data_pegawai.pack()
 
         tk.Button(
-            right_frame, 
-            text="Browse JSON",
-            command=lambda: self.entry_template_json.insert(
+            right_frame,
+            text="Browse Excel",
+            command=lambda: self.entry_data_pegawai.insert(
                 0,
                 filedialog.askopenfilename(
-                    title="Pilih File JSON",
+                    title="Pilih Data Pegawai",
                     filetypes=[
-                        ("JSON File", "*.json")
+                        ("Excel Workbook", "*.xlsx")
                     ]
                 )
             )
@@ -199,7 +199,7 @@ class App:
             excel = self.entry_template_excel.get()
             word = TEMPLATE_WORD
             ekin_apel = self.entry_ekin_apel.get()
-            json_pegawai = self.entry_template_json.get()
+            excel_pegawai = self.entry_data_pegawai.get()
             json_kalender = self.entry_kalender_json.get()
 
             bulan = self.entry_bulan.get().zfill(2)
@@ -217,7 +217,7 @@ class App:
             # STEP 1 — DOWNLOAD
             if self.var_download.get():
                 self.log("== Download Rekap Kehadiran ==")
-                download_rekap(json_pegawai, DIR_REKAP, bulan, tahun, self.log)
+                download_rekap(excel_pegawai, DIR_REKAP, bulan, tahun, self.log)
 
             # STEP 1.5 — INPUT SPESIMEN
             if self.var_spesimen.get():

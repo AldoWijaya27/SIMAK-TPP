@@ -5,6 +5,7 @@ import time
 import base64
 import threading
 import subprocess
+from openpyxl import load_workbook
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from selenium import webdriver
@@ -120,20 +121,30 @@ def process_pegawai(obj, base_url, dir_rekap, log):
     except Exception as e:
         log(f"Error download {nama}: {str(e)}")
 
-def download_rekap(json_pegawai, dir_rekap, bulan, tahun, log):
-    with open(json_pegawai, encoding="utf-8") as f:
-        items = json.load(f)
+def download_rekap(excel_pegawai, dir_rekap, bulan, tahun, log):
+    wb = load_workbook(excel_pegawai, data_only=True)
+    ws = wb.active
+
+    # Ambil header pada baris pertama
+    headers = [cell.value for cell in ws[1]]
+
+    # Ubah setiap baris menjadi dictionary
+    items = []
+
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if all(cell is None for cell in row):
+            continue
+
+        items.append(dict(zip(headers, row)))
 
     if not items:
         log("Tidak ada data pegawai untuk didownload.")
         return
 
     BASE_URL = f"https://dev1.sikap.lampungprov.go.id/app/cetak-laporan/data-harian-bulanan-pegawai?bulan={bulan}&tahun={tahun}&id_peg={{id}}"
-    
     global drivers, shared_cookies
     drivers = []
-    
-    # 1. Buka browser normal untuk memancing user login
+    # Login menggunakan pegawai pertama
     first_url = BASE_URL.format(id=items[0]["id"])
     try:
         shared_cookies = perform_manual_login(first_url, log)
@@ -141,21 +152,27 @@ def download_rekap(json_pegawai, dir_rekap, bulan, tahun, log):
     except Exception as e:
         log(f"Gagal memverifikasi login atau waktu tunggu habis. Pesan error: {e}")
         return
-    
-    # 2. Mulai download secara paralel dengan session yang sudah valid
-    max_workers = 5 # Menjalankan 5 browser secara paralel
+    max_workers = 5
     log(f"Memulai download. {max_workers}x lebih cepat dari biasanya!")
 
     try:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             for obj in items:
-                futures.append(executor.submit(process_pegawai, obj, BASE_URL, dir_rekap, log))
-            
+                futures.append(
+                    executor.submit(
+                        process_pegawai,
+                        obj,
+                        BASE_URL,
+                        dir_rekap,
+                        log
+                    )
+                )
+
             for future in as_completed(futures):
-                future.result() # Tangkap error jika ada thread yang gagal
+                future.result()
+
     finally:
-        # Bersihkan dan tutup semua browser
         for d in drivers:
             try:
                 d.quit()
