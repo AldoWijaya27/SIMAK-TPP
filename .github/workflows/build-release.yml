@@ -2,7 +2,7 @@ name: Build and Release
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "daniel-git-actions" ]
 
 # Batalkan run sebelumnya jika ada push baru ke main
 # Hanya commit paling akhir yang akan selesai di-build
@@ -58,7 +58,7 @@ jobs:
         body: |
           ## SIMAK-TPP - Latest Build
 
-          📦 Build otomatis dari commit terbaru di branch `main`.
+          📦 Build otomatis dari commit terbaru di branch `daniel-git-actions`.
           🔨 Commit: `${{ github.sha }}`
           🕐 Diperbarui: ${{ github.event.head_commit.timestamp }}
 
