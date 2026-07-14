@@ -17,11 +17,17 @@ jobs:
       contents: write
 
     steps:
-    - name: Checkout Code
+    - name: Checkout Code (development branch)
       uses: actions/checkout@v4
       with:
-        ref: development   # Checkout branch aplikasi, bukan branch workflow
+        ref: development   # Checkout kode aplikasi dari branch development
         fetch-depth: 0     # Diperlukan untuk bisa push tag
+
+    - name: Ambil requirements.txt dan spec dari branch daniel-git-actions
+      run: |
+        git fetch origin daniel-git-actions
+        git checkout origin/daniel-git-actions -- requirements.txt SIMAK-TPP.spec
+      shell: bash
 
     - name: Set up Python 3.10
       uses: actions/setup-python@v5
