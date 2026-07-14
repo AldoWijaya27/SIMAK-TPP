@@ -5,7 +5,7 @@ from app_path import get_file
 def input_spesimen(dir_rekap, dir_rekap_tandatangan, log):
 
     # arahkan ke folder files menggunakan get_file untuk mendukung mode frozen .exe
-    TTD_IMAGE = get_file("files", "spesimen.png")
+    TTD_IMAGE = get_file("files", "spesimen-compressed.png")
 
     os.makedirs(dir_rekap_tandatangan, exist_ok=True)
 
@@ -60,7 +60,19 @@ def input_spesimen(dir_rekap, dir_rekap_tandatangan, log):
 
                 page.insert_image(ttd_rect, filename=TTD_IMAGE)
 
-            doc.save(output_path)
+            # Simpan dengan kompresi untuk memperkecil ukuran file
+            # garbage=4: hapus objek tidak terpakai sepenuhnya
+            # deflate=True: kompres stream konten
+            # deflate_images=True: kompres gambar (termasuk spesimen)
+            # deflate_fonts=True: kompres font
+            # clean=True: bersihkan syntax PDF agar lebih padat
+            doc.save(output_path,
+                garbage=4,
+                deflate=True,
+                deflate_images=True,
+                deflate_fonts=True,
+                clean=True
+            )
             doc.close()
 
     log(f"✔ Selesai. Total file diproses: {total_file}")

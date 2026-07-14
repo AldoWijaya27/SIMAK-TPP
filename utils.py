@@ -1,7 +1,7 @@
 import re
 import glob
 import os
-from PyPDF2 import PdfMerger
+import fitz  # PyMuPDF — mendukung kompresi saat merge
 
 def sanitize_filename(name):
     return re.sub(r'[\\/*?:"<>|]', "_", str(name))
@@ -13,9 +13,20 @@ def find_rekap_pdf(dir_rekap, bidang, nama):
 
 
 def merge_pdf(files, output):
-    merger = PdfMerger()
+    """Gabungkan beberapa file PDF menjadi satu dan simpan dengan kompresi."""
+    merged = fitz.open()
+
     for f in files:
         if f and os.path.exists(f):
-            merger.append(f)
-    merger.write(output)
-    merger.close()
+            with fitz.open(f) as src:
+                merged.insert_pdf(src)
+
+    # Simpan dengan kompresi untuk memperkecil ukuran file final
+    merged.save(output,
+        garbage=4,          # hapus objek PDF tidak terpakai secara agresif
+        deflate=True,       # kompres stream konten teks
+        deflate_images=True,# kompres stream gambar
+        deflate_fonts=True, # kompres font tertanam
+        clean=True          # rapikan syntax internal PDF
+    )
+    merged.close()
