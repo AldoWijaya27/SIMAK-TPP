@@ -7,7 +7,7 @@ import pdfplumber
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Border, Side
 
-from Aplikasi.steps.work_calendar import WorkCalendar, parse_tanggal_indonesia
+from steps.work_calendar import WorkCalendar, parse_tanggal_indonesia
 
 
 # =========================================================
@@ -92,6 +92,7 @@ def analisis_kehadiran(dir_rekap, template_excel, output_excel, log, json_kalend
 
             nama = os.path.splitext(file)[0].strip()
             file_path = os.path.join(root, file)
+            log(f"Menganalisis: {file}")
 
             with pdfplumber.open(file_path) as pdf:
                 text = "\n".join([p.extract_text() or "" for p in pdf.pages])
@@ -186,6 +187,7 @@ def analisis_kehadiran(dir_rekap, template_excel, output_excel, log, json_kalend
     # =====================================================
     # TULIS EXCEL
     # =====================================================
+    log("Menulis hasil analisis ke Excel...")
     shutil.copy(template_excel, output_excel)
 
     wb = load_workbook(template_excel, keep_links=True)

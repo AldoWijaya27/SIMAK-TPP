@@ -1,16 +1,11 @@
 import fitz
 import os
+from app_path import get_file
 
 def input_spesimen(dir_rekap, dir_rekap_tandatangan, log):
 
-    # lokasi file ini (steps/)
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-    # naik ke folder Aplikasi
-    APP_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))
-
-    # arahkan ke folder files
-    TTD_IMAGE = os.path.join(APP_DIR, "files", "spesimen.png")
+    # arahkan ke folder files menggunakan get_file untuk mendukung mode frozen .exe
+    TTD_IMAGE = get_file("files", "spesimen.png")
 
     os.makedirs(dir_rekap_tandatangan, exist_ok=True)
 

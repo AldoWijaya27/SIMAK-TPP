@@ -4,9 +4,12 @@ import sys
 import time
 import base64
 import threading
+import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from selenium import webdriver
+from selenium.webdriver.chrome.webdriver import WebDriver as ChromeDriver
+from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -22,9 +25,24 @@ shared_cookies = []
 
 def perform_manual_login(login_url, log):
     log("Cepetan loginnya, jangan kelamaan, cepetan!!!")
-    options = webdriver.ChromeOptions()
+    options = ChromeOptions()
     options.add_argument("--start-maximized")
-    driver = webdriver.Chrome(options=options)
+    
+    # Evasion to prevent bot detection
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
+    
+    service = ChromeService()
+    if sys.platform == "win32":
+        service.creation_flags = 0x08000000  # CREATE_NO_WINDOW
+        
+    driver = webdriver.Chrome(service=service, options=options)
+    
+    # Bypass navigator.webdriver detection
+    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+        "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+    })
     
     try:
         driver.get(login_url)
@@ -41,13 +59,27 @@ def perform_manual_login(login_url, log):
 
 def get_driver():
     if not hasattr(thread_local, "driver"):
-        options = webdriver.ChromeOptions()
+        options = ChromeOptions()
         options.add_argument("--headless=new") # Jalan di background
         options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")
         options.add_argument("--window-size=1920,1080")
         
-        driver = webdriver.Chrome(options=options)
+        # Evasion to prevent bot detection
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+        
+        service = ChromeService()
+        if sys.platform == "win32":
+            service.creation_flags = 0x08000000  # CREATE_NO_WINDOW
+            
+        driver = webdriver.Chrome(service=service, options=options)
+        
+        # Bypass navigator.webdriver detection
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+        })
         
         # Pindah ke domain root dulu agar selenium mengizinkan injeksi cookies
         driver.get("https://dev1.sikap.lampungprov.go.id/favicon.ico")

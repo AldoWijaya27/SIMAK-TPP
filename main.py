@@ -10,7 +10,7 @@ if PARENT_DIR not in sys.path:
 # ==================================================
 
 import tkinter as tk
-from Aplikasi.gui import App   # <-- pakai import absolut
+from gui import App   # <-- pakai import absolut
 
 def main():
     root = tk.Tk()

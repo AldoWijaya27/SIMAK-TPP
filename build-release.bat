@@ -4,7 +4,7 @@ setlocal
 cd /d "%~dp0"
 
 echo [1/3] Building application...
-pyinstaller "SIMAK-TPP.spec" --noconfirm --clean
+python -m PyInstaller "SIMAK-TPP.spec" --noconfirm --clean
 if errorlevel 1 (
     echo Build gagal.
     exit /b 1
