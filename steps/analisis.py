@@ -7,7 +7,7 @@ import pdfplumber
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Border, Side
 
-from Aplikasi.steps.work_calendar import WorkCalendar, parse_tanggal_indonesia
+from steps.work_calendar import WorkCalendar, parse_tanggal_indonesia
 
 
 # =========================================================

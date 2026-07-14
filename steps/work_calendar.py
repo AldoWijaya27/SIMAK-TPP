@@ -1,6 +1,6 @@
 import json
 from datetime import datetime, time, date
-from Aplikasi.app_path import get_file
+from app_path import get_file
 
 BULAN_ID = {
     "januari":1, "februari":2, "maret":3, "april":4,

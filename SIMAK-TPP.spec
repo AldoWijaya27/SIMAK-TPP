@@ -2,9 +2,11 @@
 
 a = Analysis(
     ['main.py'],
-    pathex=[],
+    pathex=['.'],
     binaries=[],
-    datas=[],
+    datas=[
+        ('files', 'files'),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
