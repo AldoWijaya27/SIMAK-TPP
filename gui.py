@@ -8,7 +8,7 @@ import traceback
 
 from steps.merge_ekin_apel import merge_ekin_apel
 from steps.excel_csv import excel_sheet_disiplin_ke_csv
-from steps.download import download_rekap
+from steps.download import download_rekap, stop_event, stop_download
 from steps.input_spesimen import input_spesimen
 from steps.analisis import analisis_kehadiran
 from steps.merge2 import process_mail_merge
@@ -216,21 +216,29 @@ class App:
 
             # STEP 1 — DOWNLOAD
             if self.var_download.get():
+                if stop_event.is_set():
+                    return
                 self.log("== Download Rekap Kehadiran ==")
                 download_rekap(excel_pegawai, DIR_REKAP, bulan, tahun, self.log)
 
             # STEP 1.5 — INPUT SPESIMEN
             if self.var_spesimen.get():
+                if stop_event.is_set():
+                    return
                 self.log("== Input Spesimen Tanda Tangan ==")
                 input_spesimen(DIR_REKAP, DIR_REKAP_DITANDATANGANI, self.log)
 
             # STEP 2 — ANALISIS
             if self.var_analisis.get():
+                if stop_event.is_set():
+                    return
                 self.log("== Analisis Kehadiran ==")
                 analisis_kehadiran(DIR_REKAP, excel, output_excel, self.log, json_kalender)
 
             # STEP 3 — MERGE EKIN APEL
             if self.var_merge.get():
+                if stop_event.is_set():
+                    return
                 self.log("== Merge Ekin & Apel ==")
                 status, pesan = merge_ekin_apel(
                     ekin_apel,
@@ -245,17 +253,22 @@ class App:
 
             # STEP 4 — CSV
             if self.var_csv.get():
+                if stop_event.is_set():
+                    return
                 self.log("== Generate CSV ==")
                 excel_sheet_disiplin_ke_csv(output_template_ready, base_dir)
 
             # STEP 5 — MAIL MERGE
             if self.var_mailmerge.get():
+                if stop_event.is_set():
+                    return
                 self.log("== Mail Merge TPP ==")
                 process_mail_merge(DIR_REKAP_DITANDATANGANI, DIR_OUTPUT, TEMP_DIR, csv_output, word, self.log)
 
             # Jika berhasil semua
-            self.log("Semua proses selesai dengan sukses.")
-            self.root.after(0, lambda: messagebox.showinfo("Selesai","Semua proses selesai"))
+            if not stop_event.is_set():
+                self.log("Semua proses selesai dengan sukses.")
+                self.root.after(0, lambda: messagebox.showinfo("Selesai","Semua proses selesai"))
 
         # BAGIAN INI AKAN MENANGKAP ERROR APAPUN YANG BIKIN STUCK
         except SystemExit:
@@ -272,7 +285,11 @@ class App:
             self.root.after(0, lambda: messagebox.showerror("Terjadi Kesalahan Kritis", error_msg))
         finally:
             self.is_running = False
-            self.root.after(0, lambda: self.btn_action.config(text="JALANKAN", bg="green"))
+            self.root.after(0, lambda: self.btn_action.config(text="JALANKAN", bg="green", state="normal"))
+            if stop_event.is_set():
+                self.log("\n================ PROSES DIBERHENTIKAN ================")
+                self.log("Proses telah diberhentikan oleh pengguna.")
+                self.root.after(0, lambda: messagebox.showinfo("Berhenti", "Proses berhasil diberhentikan. Silahkan mulai lagi."))
 
     def toggle_process(self):
         if getattr(self, 'is_running', False):
@@ -286,6 +303,7 @@ class App:
             self.root.after(0, lambda: messagebox.showerror("Error", "ERROR!"))
             return
 
+        stop_event.clear()
         self.is_running = True
         self.btn_action.config(text="STOP", bg="red")
         self.log_box.delete('1.0', tk.END) # Bersihkan log sebelumnya
@@ -293,15 +311,7 @@ class App:
         self.process_thread.start()
 
     def stop_process(self):
-        if hasattr(self, 'process_thread') and self.process_thread.is_alive():
-            import ctypes
-            exc = ctypes.py_object(SystemExit)
-            res = ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(self.process_thread.ident), exc)
-            if res > 1:
-                ctypes.pythonapi.PyThreadState_SetAsyncExc(self.process_thread.ident, None)
-        
-        self.is_running = False
-        self.btn_action.config(text="JALANKAN", bg="green")
-        self.log("\n================ PROSES DIBERHENTIKAN ================")
-        self.log("Proses telah diberhentikan oleh pengguna.")
-        messagebox.showinfo("Berhenti", "Proses berhasil diberhentikan. Silahkan mulai lagi.")
+        self.btn_action.config(text="MENGHENTIKAN...", bg="orange", state="disabled")
+        self.log("\n================ MENGHENTIKAN PROSES ================")
+        self.log("Sedang menghentikan proses, mohon tunggu...")
+        threading.Thread(target=stop_download, daemon=True).start()
