@@ -19,6 +19,11 @@ def input_spesimen(dir_rekap, dir_rekap_tandatangan, log):
 
             total_file += 1
 
+            from steps.download import stop_event
+            if stop_event.is_set():
+                log("Input spesimen dibatalkan oleh pengguna.")
+                raise SystemExit()
+
             input_path = os.path.join(root, filename)
 
             # 🔥 Jaga struktur folder output

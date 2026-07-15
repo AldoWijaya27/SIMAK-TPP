@@ -95,6 +95,11 @@ def analisis_kehadiran(dir_rekap, template_excel, output_excel, log, json_kalend
     log(f"Menemukan {total_files} file PDF rekap kehadiran.")
 
     for idx, (root, file) in enumerate(pdf_files, 1):
+        from steps.download import stop_event
+        if stop_event.is_set():
+            log("Analisis kehadiran dibatalkan oleh pengguna.")
+            raise SystemExit()
+
         nama = os.path.splitext(file)[0].strip()
         file_path = os.path.join(root, file)
 
