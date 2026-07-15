@@ -8,11 +8,19 @@ if CURRENT_DIR not in sys.path:
     sys.path.insert(0, CURRENT_DIR)
 # ==================================================
 
-import tkinter as tk
-from gui import App   # <-- import lokal, kompatibel dengan PyInstaller
+import customtkinter as ctk
+from gui import App
 
 def main():
-    root = tk.Tk()
+    # Use TkinterDnD for drag-and-drop support if available
+    try:
+        from tkinterdnd2 import TkinterDnD
+        root = ctk.CTk(className="SIMAK-TPP")
+        # Inject TkinterDnD capabilities into the CTk root
+        TkinterDnD._require(root)
+    except Exception:
+        root = ctk.CTk()
+
     App(root)
     root.mainloop()
 

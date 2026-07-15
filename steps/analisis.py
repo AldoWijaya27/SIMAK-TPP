@@ -84,17 +84,31 @@ def analisis_kehadiran(dir_rekap, template_excel, output_excel, log, json_kalend
     # === BACA PDF ===
     hasil_rekap = {}
 
+    # Kumpulkan semua file PDF untuk menghitung total & melaporkan progres
+    pdf_files = []
     for root, dirs, files in os.walk(dir_rekap):
         for file in files:
+            if file.lower().endswith(".pdf"):
+                pdf_files.append((root, file))
 
-            if not file.lower().endswith(".pdf"):
-                continue
+    total_files = len(pdf_files)
+    log(f"Menemukan {total_files} file PDF rekap kehadiran.")
 
-            nama = os.path.splitext(file)[0].strip()
-            file_path = os.path.join(root, file)
+    for idx, (root, file) in enumerate(pdf_files, 1):
+        from steps.download import stop_event
+        if stop_event.is_set():
+            log("Analisis kehadiran dibatalkan oleh pengguna.")
+            raise SystemExit()
 
-            with pdfplumber.open(file_path) as pdf:
-                text = "\n".join([p.extract_text() or "" for p in pdf.pages])
+        nama = os.path.splitext(file)[0].strip()
+        file_path = os.path.join(root, file)
+
+        # Log progres setiap 10 file agar user tahu aplikasi sedang bekerja
+        if idx % 10 == 0 or idx == 1 or idx == total_files:
+            log(f"  - [{idx}/{total_files}] Membaca & menganalisis: {nama}")
+
+        with pdfplumber.open(file_path) as pdf:
+            text = "\n".join([p.extract_text() or "" for p in pdf.pages])
 
             # normalisasi
             text = re.sub(r"\n+", "\n", text).strip()
@@ -186,6 +200,7 @@ def analisis_kehadiran(dir_rekap, template_excel, output_excel, log, json_kalend
     # =====================================================
     # TULIS EXCEL
     # =====================================================
+    log("Menulis hasil analisis ke Excel...")
     shutil.copy(template_excel, output_excel)
 
     wb = load_workbook(template_excel, keep_links=True)
@@ -235,6 +250,7 @@ def analisis_kehadiran(dir_rekap, template_excel, output_excel, log, json_kalend
 
             ws.cell(row, map_col["HariKerja"]).value = data["HariKerja"]
 
+    log(f"Menulis dan menyimpan hasil ke Excel: {output_excel}")
     wb.save(output_excel)
     wb.close()
 

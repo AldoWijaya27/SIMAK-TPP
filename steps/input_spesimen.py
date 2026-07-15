@@ -1,16 +1,11 @@
 import fitz
 import os
+from app_path import get_file
 
 def input_spesimen(dir_rekap, dir_rekap_tandatangan, log):
 
-    # lokasi file ini (steps/)
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-    # naik ke folder Aplikasi
-    APP_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))
-
-    # arahkan ke folder files
-    TTD_IMAGE = os.path.join(APP_DIR, "files", "spesimen.png")
+    # arahkan ke folder files menggunakan get_file untuk mendukung mode frozen .exe
+    TTD_IMAGE = get_file("files", "spesimen-compressed.png")
 
     os.makedirs(dir_rekap_tandatangan, exist_ok=True)
 
@@ -23,6 +18,11 @@ def input_spesimen(dir_rekap, dir_rekap_tandatangan, log):
                 continue
 
             total_file += 1
+
+            from steps.download import stop_event
+            if stop_event.is_set():
+                log("Input spesimen dibatalkan oleh pengguna.")
+                raise SystemExit()
 
             input_path = os.path.join(root, filename)
 
@@ -65,7 +65,19 @@ def input_spesimen(dir_rekap, dir_rekap_tandatangan, log):
 
                 page.insert_image(ttd_rect, filename=TTD_IMAGE)
 
-            doc.save(output_path)
+            # Simpan dengan kompresi untuk memperkecil ukuran file
+            # garbage=4: hapus objek tidak terpakai sepenuhnya
+            # deflate=True: kompres stream konten
+            # deflate_images=True: kompres gambar (termasuk spesimen)
+            # deflate_fonts=True: kompres font
+            # clean=True: bersihkan syntax PDF agar lebih padat
+            doc.save(output_path,
+                garbage=4,
+                deflate=True,
+                deflate_images=True,
+                deflate_fonts=True,
+                clean=True
+            )
             doc.close()
 
     log(f"✔ Selesai. Total file diproses: {total_file}")
