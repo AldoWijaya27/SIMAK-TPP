@@ -2,7 +2,7 @@ name: Build and Release
 
 on:
   push:
-    branches: [ "daniel-git-actions" ]
+    branches: [ "development" ]
 
 # Batalkan run sebelumnya jika ada push baru ke main
 # Hanya commit paling akhir yang akan selesai di-build
@@ -22,6 +22,7 @@ jobs:
       with:
         ref: development   # Checkout kode aplikasi dari branch development
         fetch-depth: 0     # Diperlukan untuk bisa push tag
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Ambil requirements.txt dan spec dari branch daniel-git-actions
       run: |
@@ -65,7 +66,7 @@ jobs:
         body: |
           ## SIMAK-TPP - Latest Build
 
-          📦 Build otomatis dari commit terbaru di branch `daniel-git-actions`.
+          📦 Build otomatis dari commit terbaru di branch `development`.
           🔨 Commit: `${{ github.sha }}`
           🕐 Diperbarui: ${{ github.event.head_commit.timestamp }}
 
