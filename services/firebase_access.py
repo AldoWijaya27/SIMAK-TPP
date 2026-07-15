@@ -22,8 +22,10 @@ class FirebaseRealtimeUserAccessGateway:
 
         url = f"{self.base_url.rstrip('/')}/allowed_users/{username}.json"
         req = request.Request(url=url, method="GET")
+        import ssl
         try:
-            with request.urlopen(req, timeout=self.timeout_seconds) as response:
+            context = ssl._create_unverified_context()
+            with request.urlopen(req, timeout=self.timeout_seconds, context=context) as response:
                 body = response.read().decode("utf-8", errors="ignore").strip()
         except (error.URLError, error.HTTPError, TimeoutError, ValueError):
             return False

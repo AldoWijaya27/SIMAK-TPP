@@ -1,27 +1,44 @@
 from logging import log
 import os
 import pandas as pd
-import pythoncom
-import win32com.client as win32
 import urllib.parse
+import platform
+import shlex
+
+try:
+    import pythoncom
+    import win32com.client as win32
+    WINDOWS_COM_AVAILABLE = True
+except ImportError:
+    WINDOWS_COM_AVAILABLE = False
+
+try:
+    from mailmerge import MailMerge
+    MAILMERGE_AVAILABLE = True
+except ImportError:
+    MAILMERGE_AVAILABLE = False
 
 from utils import sanitize_filename, find_rekap_pdf, merge_pdf
 
+# Monkeypatch shlex.split to handle unclosed quotes in Word mergefield formatting instructions
+original_split = shlex.split
+def patched_split(s, *args, **kwargs):
+    if s.count('"') % 2 != 0:
+        s = s.replace('"', '')
+    if s.count("'") % 2 != 0:
+        s = s.replace("'", "")
+    return original_split(s, *args, **kwargs)
 
-def process_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word, log):
+shlex.split = patched_split
 
+
+def _run_windows_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word, log):
     pythoncom.CoInitialize()
 
     try:
         word = win32.Dispatch("Word.Application")
         word.Visible = False
         word.DisplayAlerts = 0
-
-        template_word = urllib.parse.unquote(template_word)
-        template_word = os.path.normpath(template_word)
-
-        if not os.path.exists(template_word):
-            raise Exception(f"Template tidak ditemukan: {template_word}")
 
         doc = word.Documents.Open(template_word)
         doc.MailMerge.OpenDataSource(
@@ -74,14 +91,109 @@ def process_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word,
 
             log(f"Selesai: {final}")
 
-
-        # =============================
-        # 6. CLEANUP
-        # =============================
         doc.Close(False)
         word.Quit()
-
         log("Semua proses mail merge selesai.")
 
     finally:
         pythoncom.CoUninitialize()
+
+
+def _run_macos_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word, log):
+    log("[MACOS] Memulai proses Mail Merge nyata via docx-mailmerge2 + LibreOffice...")
+    
+    if not MAILMERGE_AVAILABLE:
+        raise Exception("Pustaka 'docx-mailmerge2' tidak terinstal di macOS. Silakan jalankan 'pip install docx-mailmerge2'.")
+        
+    soffice_path = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+    if not os.path.exists(soffice_path):
+        raise Exception("LibreOffice tidak ditemukan di /Applications/LibreOffice.app. Silakan instal LibreOffice terlebih dahulu.")
+
+    # Baca data CSV dengan dtype=str untuk menjaga format teks
+    try:
+        df = pd.read_csv(csv_file, sep=";", encoding="utf-8", dtype=str)
+    except Exception as e:
+        raise Exception(f"Gagal membaca CSV: {e}")
+        
+    df.columns = df.columns.str.strip().str.upper()
+    total_records = len(df)
+    log(f"[MACOS] Total record CSV: {total_records}")
+
+    for idx, row in df.iterrows():
+        # Bersihkan NaN
+        row_dict = row.to_dict()
+        row_dict = {k: (v if pd.notna(v) else "") for k, v in row_dict.items()}
+
+        nama = sanitize_filename(str(row_dict.get("NAMA", f"Pegawai_{idx+1}")))
+        bidang = str(row_dict.get("BIDANG", "Umum"))
+
+        log(f"Processing {nama} ({bidang})")
+
+        # 1. Jalankan mail merge di memory dan simpan sebagai docx sementara
+        temp_docx = os.path.abspath(os.path.join(TEMP_DIR, f"{nama}.docx"))
+        try:
+            with MailMerge(template_word) as document:
+                document.merge(**row_dict)
+                document.write(temp_docx)
+        except Exception as e:
+            log(f"    ❌ Gagal Mail Merge docx untuk {nama}: {e}")
+            continue
+
+        # 2. Konversi docx sementara menjadi PDF via LibreOffice
+        temp_pdf = os.path.abspath(os.path.join(TEMP_DIR, f"{nama}.pdf"))
+        if os.path.exists(temp_pdf):
+            os.remove(temp_pdf)
+
+        import subprocess
+        cmd = [
+            soffice_path,
+            "--headless",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            TEMP_DIR,
+            temp_docx
+        ]
+        
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            log(f"    ❌ Gagal konversi PDF via LibreOffice untuk {nama}: {e}")
+            if os.path.exists(temp_docx):
+                os.remove(temp_docx)
+            continue
+
+        if os.path.exists(temp_docx):
+            os.remove(temp_docx)
+
+        # 3. Cari file rekap PDF
+        rekap = find_rekap_pdf(DIR_REKAP, bidang, nama)
+
+        # 4. Gabungkan PDF hasil mail merge dengan PDF rekap kehadiran
+        final_folder = os.path.join(DIR_OUTPUT, bidang)
+        os.makedirs(final_folder, exist_ok=True)
+        final = os.path.join(final_folder, f"{nama}.pdf")
+
+        try:
+            merge_pdf([temp_pdf, rekap], final)
+            log(f"    ✔ Selesai: {final}")
+        except Exception as e:
+            log(f"    ❌ Gagal menggabungkan PDF untuk {nama}: {e}")
+        finally:
+            if os.path.exists(temp_pdf):
+                os.remove(temp_pdf)
+
+    log("[MACOS] Semua proses mail merge selesai.")
+
+
+def process_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word, log):
+    template_word = urllib.parse.unquote(template_word)
+    template_word = os.path.normpath(template_word)
+    
+    if not os.path.exists(template_word):
+        raise Exception(f"Template tidak ditemukan: {template_word}")
+
+    if platform.system() != "Darwin" and WINDOWS_COM_AVAILABLE:
+        _run_windows_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word, log)
+    else:
+        _run_macos_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word, log)
