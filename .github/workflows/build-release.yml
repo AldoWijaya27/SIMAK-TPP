@@ -1,0 +1,81 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ "daniel-git-actions" ]
+
+# Batalkan run sebelumnya jika ada push baru ke main
+# Hanya commit paling akhir yang akan selesai di-build
+concurrency:
+  group: build-release
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout Code (development branch)
+      uses: actions/checkout@v4
+      with:
+        ref: development   # Checkout kode aplikasi dari branch development
+        fetch-depth: 0     # Diperlukan untuk bisa push tag
+
+    - name: Ambil requirements.txt dan spec dari branch daniel-git-actions
+      run: |
+        git fetch origin daniel-git-actions
+        git checkout origin/daniel-git-actions -- requirements.txt SIMAK-TPP.spec
+      shell: bash
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Build Executable
+      run: |
+        pyinstaller SIMAK-TPP.spec
+      shell: cmd
+
+    - name: Zip Build Output
+      run: |
+        Compress-Archive -Path dist\SIMAK-TPP\* -DestinationPath SIMAK-TPP-Windows-latest.zip
+      shell: pwsh
+
+    - name: Move tag 'latest' ke commit ini
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git tag -f latest
+        git push origin -f latest
+      shell: bash
+
+    - name: Create or Update Latest Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: latest
+        name: "SIMAK-TPP - Latest Build"
+        body: |
+          ## SIMAK-TPP - Latest Build
+
+          📦 Build otomatis dari commit terbaru di branch `daniel-git-actions`.
+          🔨 Commit: `${{ github.sha }}`
+          🕐 Diperbarui: ${{ github.event.head_commit.timestamp }}
+
+          ### Cara Install
+          1. Download file ZIP di bawah
+          2. Ekstrak ke folder mana saja
+          3. Jalankan `SIMAK-TPP.exe`
+
+          > ⚠️ Semua file dalam folder ZIP harus tetap berada dalam satu folder yang sama dengan `SIMAK-TPP.exe`.
+        files: SIMAK-TPP-Windows-latest.zip
+        draft: false
+        prerelease: false
+        make_latest: true
