@@ -9,7 +9,7 @@ import traceback
 
 from steps.merge_ekin_apel import merge_ekin_apel
 from steps.excel_csv import excel_sheet_disiplin_ke_csv
-from steps.download import download_rekap
+from steps.download import download_rekap, stop_event, stop_download
 from steps.input_spesimen import input_spesimen
 from steps.analisis import analisis_kehadiran
 from steps.merge2 import process_mail_merge
@@ -846,21 +846,29 @@ class App:
 
             # STEP 1 — DOWNLOAD
             if self.var_download.get():
+                if stop_event.is_set():
+                    return
                 self.log("── [1/6] Download Rekap Kehadiran ──")
                 download_rekap(excel_pegawai, DIR_REKAP, bulan, tahun, self.log)
 
             # STEP 1.5 — INPUT SPESIMEN
             if self.var_spesimen.get():
+                if stop_event.is_set():
+                    return
                 self.log("── [2/6] Input Spesimen Tanda Tangan ──")
                 input_spesimen(DIR_REKAP, DIR_REKAP_DITANDATANGANI, self.log)
 
             # STEP 2 — ANALISIS
             if self.var_analisis.get():
+                if stop_event.is_set():
+                    return
                 self.log("── [3/6] Analisis Kehadiran ──")
                 analisis_kehadiran(DIR_REKAP, excel, output_excel, self.log, json_kalender)
 
             # STEP 3 — MERGE EKIN APEL
             if self.var_merge.get():
+                if stop_event.is_set():
+                    return
                 self.log("── [4/6] Gabung Ekin & Apel ──")
                 status, pesan = merge_ekin_apel(
                     ekin_apel,
@@ -875,18 +883,23 @@ class App:
 
             # STEP 4 — CSV
             if self.var_csv.get():
+                if stop_event.is_set():
+                    return
                 self.log("── [5/6] Generate CSV ──")
                 excel_sheet_disiplin_ke_csv(output_template_ready, base_dir)
 
             # STEP 5 — MAIL MERGE
             if self.var_mailmerge.get():
+                if stop_event.is_set():
+                    return
                 self.log("── [6/6] Mail Merge TPP ──")
                 process_mail_merge(DIR_REKAP_DITANDATANGANI, DIR_OUTPUT, TEMP_DIR, csv_output, word, self.log)
 
             # Jika berhasil semua
-            self.log("✅ Semua proses selesai dengan sukses.")
-            self.root.after(0, lambda: self._set_status("● Semua proses selesai!", COLORS["status_ok"]))
-            self.root.after(0, lambda: messagebox.showinfo("Selesai", "Semua proses selesai"))
+            if not stop_event.is_set():
+                self.log("✅ Semua proses selesai dengan sukses.")
+                self.root.after(0, lambda: self._set_status("● Semua proses selesai!", COLORS["status_ok"]))
+                self.root.after(0, lambda: messagebox.showinfo("Selesai", "Semua proses selesai"))
 
         # BAGIAN INI AKAN MENANGKAP ERROR APAPUN YANG BIKIN STUCK
         except SystemExit:
@@ -908,13 +921,22 @@ class App:
             self.root.after(0, lambda: self.btn_action.configure(
                 text="▶   JALANKAN",
                 fg_color=COLORS["btn_run"],
-                hover_color=COLORS["btn_run_hover"]
+                hover_color=COLORS["btn_run_hover"],
+                state="normal"
             ))
-            # Reset status if still showing "running" (e.g. after early return)
+            if stop_event.is_set():
+                self.log("\n================ PROSES DIBERHENTIKAN ================")
+                self.log("Proses telah diberhentikan oleh pengguna.")
+                self.root.after(0, lambda: messagebox.showinfo("Berhenti", "Proses berhasil diberhentikan. Silahkan mulai lagi."))
+            
+            # Reset status if still showing "running" (e.g. after early return or stop)
             def _reset_status_if_needed():
                 current = self.status_label.cget("text")
                 if "berjalan" in current:
-                    self._set_status("● Siap dijalankan", COLORS["status_ok"])
+                    if stop_event.is_set():
+                        self._set_status("● Proses diberhentikan", COLORS["status_running"])
+                    else:
+                        self._set_status("● Siap dijalankan", COLORS["status_ok"])
             self.root.after(100, _reset_status_if_needed)
 
     def toggle_process(self):
@@ -929,6 +951,7 @@ class App:
             self.root.after(0, lambda: messagebox.showerror("Error", "ERROR!"))
             return
 
+        stop_event.clear()
         self.is_running = True
         self.btn_action.configure(
             text="■   STOP",
@@ -941,20 +964,15 @@ class App:
         self.process_thread.start()
 
     def stop_process(self):
-        if hasattr(self, 'process_thread') and self.process_thread.is_alive():
-            import ctypes
-            exc = ctypes.py_object(SystemExit)
-            res = ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(self.process_thread.ident), exc)
-            if res > 1:
-                ctypes.pythonapi.PyThreadState_SetAsyncExc(self.process_thread.ident, None)
-
-        self.is_running = False
         self.btn_action.configure(
-            text="▶   JALANKAN",
-            fg_color=COLORS["btn_run"],
-            hover_color=COLORS["btn_run_hover"]
+            text="MENGHENTIKAN...",
+            fg_color="orange",
+            hover_color="orange",
+            state="disabled"
         )
-        self._set_status("● Proses diberhentikan", COLORS["status_running"])
-        self.log("\n================ PROSES DIBERHENTIKAN ================")
-        self.log("Proses telah diberhentikan oleh pengguna.")
-        messagebox.showinfo("Berhenti", "Proses berhasil diberhentikan. Silahkan mulai lagi.")
+        self._set_status("● Menghentikan...", COLORS["status_running"])
+        self.log("\n================ MENGHENTIKAN PROSES ================")
+        self.log("Sedang menghentikan proses, mohon tunggu...")
+        
+        # Stop download and trigger cleanup
+        threading.Thread(target=stop_download, daemon=True).start()

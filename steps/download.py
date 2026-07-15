@@ -23,8 +23,30 @@ thread_local = threading.local()
 drivers = []
 drivers_lock = threading.Lock()
 shared_cookies = []
+stop_event = threading.Event()
+current_log = None
+
+def stop_download():
+    stop_event.set()
+    if current_log:
+        try:
+            current_log("\nMenghentikan download...")
+            current_log("Menghentikan worker...")
+            current_log("Menutup browser...")
+            current_log("Membatalkan task yang belum berjalan...")
+        except Exception:
+            pass
+    with drivers_lock:
+        for driver in list(drivers):
+            try:
+                driver.quit()
+            except Exception:
+                pass
+        drivers.clear()
 
 def perform_manual_login(login_url, log):
+    if stop_event.is_set():
+        return None
     log("Cepetan loginnya, jangan kelamaan, cepetan!!!")
     options = ChromeOptions()
     options.add_argument("--start-maximized")
@@ -39,6 +61,8 @@ def perform_manual_login(login_url, log):
         service.creation_flags = 0x08000000  # CREATE_NO_WINDOW
         
     driver = webdriver.Chrome(service=service, options=options)
+    with drivers_lock:
+        drivers.append(driver)
     
     # Bypass navigator.webdriver detection
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
@@ -46,20 +70,47 @@ def perform_manual_login(login_url, log):
     })
     
     try:
+        if stop_event.is_set():
+            return None
         driver.get(login_url)
+        if stop_event.is_set():
+            return None
         # Tunggu sampai elemen table muncul (tanda bahwa login sudah berhasil dan masuk ke halaman)
         wait = WebDriverWait(driver, 120)
         wait.until(EC.presence_of_element_located((By.TAG_NAME, "table")))
+        if stop_event.is_set():
+            return None
         time.sleep(1)
+        if stop_event.is_set():
+            return None
         
         # Ambil cookies untuk diberikan ke background browser
         cookies = driver.get_cookies()
         return cookies
     finally:
-        driver.quit()
+        with drivers_lock:
+            if driver in drivers:
+                drivers.remove(driver)
+        try:
+            driver.quit()
+        except:
+            pass
 
 def get_driver():
+    # Jika thread sudah memiliki driver, periksa apakah driver tersebut masih valid (terdaftar di global drivers).
+    # Jika driver tidak terdaftar (karena telah ditutup oleh stop_download), bersihkan referensi lokalnya.
+    if hasattr(thread_local, "driver"):
+        driver_valid = False
+        with drivers_lock:
+            if thread_local.driver in drivers:
+                driver_valid = True
+        if not driver_valid:
+            if hasattr(thread_local, "driver"):
+                delattr(thread_local, "driver")
+
     if not hasattr(thread_local, "driver"):
+        if stop_event.is_set():
+            raise RuntimeError("Download dihentikan (stop_event aktif).")
         options = ChromeOptions()
         options.add_argument("--headless=new") # Jalan di background
         options.add_argument("--disable-gpu")
@@ -76,25 +127,40 @@ def get_driver():
             service.creation_flags = 0x08000000  # CREATE_NO_WINDOW
             
         driver = webdriver.Chrome(service=service, options=options)
-        
-        # Bypass navigator.webdriver detection
-        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-            "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-        })
-        
-        # Pindah ke domain root dulu agar selenium mengizinkan injeksi cookies
-        driver.get("https://dev1.sikap.lampungprov.go.id/favicon.ico")
-        
-        global shared_cookies
-        for cookie in shared_cookies:
-            driver.add_cookie(cookie)
-            
-        thread_local.driver = driver
         with drivers_lock:
             drivers.append(driver)
+            
+        try:
+            # Bypass navigator.webdriver detection
+            driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+                "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+            })
+            
+            # Pindah ke domain root dulu agar selenium mengizinkan injeksi cookies
+            driver.get("https://dev1.sikap.lampungprov.go.id/favicon.ico")
+            
+            global shared_cookies
+            for cookie in shared_cookies:
+                driver.add_cookie(cookie)
+                
+            thread_local.driver = driver
+        except Exception as e:
+            # Jika gagal inisialisasi dan bukan karena stop_event, bersihkan driver ini
+            if not stop_event.is_set():
+                with drivers_lock:
+                    if driver in drivers:
+                        drivers.remove(driver)
+                try:
+                    driver.quit()
+                except:
+                    pass
+            raise e
     return thread_local.driver
 
-def process_pegawai(obj, base_url, dir_rekap, log):
+def process_pegawai(obj, base_url, dir_rekap, log, progress_info=None):
+    if stop_event.is_set():
+        return False
+
     id_peg = obj["id"]
     nama = sanitize_filename(obj["name"])
     bidang = sanitize_filename(obj.get("bidang", "Lainnya"))
@@ -104,24 +170,88 @@ def process_pegawai(obj, base_url, dir_rekap, log):
 
     out = os.path.join(folder, f"{nama}.pdf")
 
-    log(f"Download {nama}")
+    if stop_event.is_set():
+        return False
 
-    driver = get_driver()
-    wait = WebDriverWait(driver, 30)
+    log(f"Download {nama}...")
 
     try:
+        if stop_event.is_set():
+            return False
+        driver = get_driver()
+        wait = WebDriverWait(driver, 30)
+
+        # Sebelum driver.get()
+        if stop_event.is_set():
+            return False
         driver.get(base_url.format(id=id_peg))
+        # Sesudah driver.get()
+        if stop_event.is_set():
+            return False
+
+        # Sebelum wait.until()
+        if stop_event.is_set():
+            return False
         wait.until(EC.presence_of_element_located((By.TAG_NAME, "table")))
+        # Sesudah wait.until()
+        if stop_event.is_set():
+            return False
+
         time.sleep(1)
+        if stop_event.is_set():
+            return False
 
+        # Sebelum execute_cdp_cmd()
+        if stop_event.is_set():
+            return False
         pdf = driver.execute_cdp_cmd("Page.printToPDF", {"scale": 0.5})
+        # Sesudah execute_cdp_cmd()
+        if stop_event.is_set():
+            return False
 
+        # Sebelum write PDF
+        if stop_event.is_set():
+            return False
         with open(out, "wb") as f:
             f.write(base64.b64decode(pdf["data"]))
+        # Sesudah write PDF
+        if stop_event.is_set():
+            return False
+
+        if progress_info:
+            with progress_info["lock"]:
+                progress_info["completed"] += 1
+                completed = progress_info["completed"]
+                total = progress_info["total"]
+                remaining = total - completed
+            log(f"{completed}/{total}: Download {nama} selesai.")
+        else:
+            log(f"Download {nama} selesai.")
+
+        return True
     except Exception as e:
-        log(f"Error download {nama}: {str(e)}")
+        if stop_event.is_set():
+            # Jika dihentikan oleh user, abaikan log error Selenium agar tidak membingungkan
+            return False
+        if progress_info:
+            with progress_info["lock"]:
+                progress_info["completed"] += 1
+                completed = progress_info["completed"]
+                total = progress_info["total"]
+                remaining = total - completed
+            log(f"Error download {nama}: {str(e)}. (Sudah didownload: {completed}/{total}, Belum: {remaining})")
+        else:
+            log(f"Error download {nama}: {str(e)}")
+        return False
 
 def download_rekap(excel_pegawai, dir_rekap, bulan, tahun, log):
+    global current_log, drivers, shared_cookies
+    current_log = log
+    stop_event.clear()
+    
+    with drivers_lock:
+        drivers.clear()
+
     wb = load_workbook(excel_pegawai, data_only=True)
     ws = wb.active
 
@@ -142,41 +272,92 @@ def download_rekap(excel_pegawai, dir_rekap, bulan, tahun, log):
         return
 
     BASE_URL = f"https://dev1.sikap.lampungprov.go.id/app/cetak-laporan/data-harian-bulanan-pegawai?bulan={bulan}&tahun={tahun}&id_peg={{id}}"
-    global drivers, shared_cookies
-    drivers = []
+    
     # Login menggunakan pegawai pertama
     first_url = BASE_URL.format(id=items[0]["id"])
     try:
         shared_cookies = perform_manual_login(first_url, log)
+        if stop_event.is_set() or shared_cookies is None:
+            log("Download dihentikan oleh pengguna.")
+            return
         log("Login terdeteksi!")
     except Exception as e:
+        if stop_event.is_set():
+            log("Download dihentikan oleh pengguna.")
+            return
         log(f"Gagal memverifikasi login atau waktu tunggu habis. Pesan error: {e}")
         return
+
+    if stop_event.is_set():
+        log("Download dihentikan oleh pengguna.")
+        return
+
     max_workers = 5
+    total_files = len(items)
+    log(f"Total file yang akan didownload: {total_files} file.")
     log(f"Memulai download. {max_workers}x lebih cepat dari biasanya!")
+
+    progress_info = {
+        "lock": threading.Lock(),
+        "completed": 0,
+        "total": total_files
+    }
+
+    start_time = time.time()
 
     try:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             for obj in items:
+                if stop_event.is_set():
+                    break
                 futures.append(
                     executor.submit(
                         process_pegawai,
                         obj,
                         BASE_URL,
                         dir_rekap,
-                        log
+                        log,
+                        progress_info
                     )
                 )
 
-            for future in as_completed(futures):
-                future.result()
+            # Menunggu seluruh task selesai, periksa stop_event secara berkala
+            while futures and not stop_event.is_set():
+                if all(f.done() for f in futures):
+                    break
+                time.sleep(0.5)
+
+            if stop_event.is_set():
+                # Batalkan task yang belum berjalan
+                for f in futures:
+                    f.cancel()
+                
+                # Shutdown executor secara non-blocking dengan cancel_futures (Python 3.9+)
+                if sys.version_info >= (3, 9):
+                    executor.shutdown(wait=False, cancel_futures=True)
+                else:
+                    executor.shutdown(wait=False)
+            else:
+                # Ambil hasil untuk melempar exception jika ada worker yang crash saat mode normal
+                for f in futures:
+                    try:
+                        f.result()
+                    except Exception:
+                        pass
 
     finally:
-        for d in drivers:
-            try:
-                d.quit()
-            except:
-                pass
+        # Tutup seluruh browser secara aman
+        with drivers_lock:
+            for d in list(drivers):
+                try:
+                    d.quit()
+                except:
+                    pass
+            drivers.clear()
 
-    log("Download selesai")
+    if stop_event.is_set():
+        log("Download dihentikan oleh pengguna.")
+    else:
+        duration = time.time() - start_time
+        log(f"Download selesai dalam {duration:.2f} detik.")
