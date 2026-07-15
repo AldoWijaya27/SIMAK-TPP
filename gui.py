@@ -932,11 +932,10 @@ class App:
             # Reset status if still showing "running" (e.g. after early return or stop)
             def _reset_status_if_needed():
                 current = self.status_label.cget("text")
-                if "berjalan" in current:
-                    if stop_event.is_set():
-                        self._set_status("● Proses diberhentikan", COLORS["status_running"])
-                    else:
-                        self._set_status("● Siap dijalankan", COLORS["status_ok"])
+                if stop_event.is_set():
+                    self._set_status("● Proses diberhentikan", COLORS["status_running"])
+                elif "berjalan" in current or "Menghentikan" in current:
+                    self._set_status("● Siap dijalankan", COLORS["status_ok"])
             self.root.after(100, _reset_status_if_needed)
 
     def toggle_process(self):
