@@ -157,7 +157,7 @@ def get_driver():
             raise e
     return thread_local.driver
 
-def process_pegawai(obj, base_url, dir_rekap, log):
+def process_pegawai(obj, base_url, dir_rekap, log, progress_info=None):
     if stop_event.is_set():
         return False
 
@@ -173,7 +173,7 @@ def process_pegawai(obj, base_url, dir_rekap, log):
     if stop_event.is_set():
         return False
 
-    log(f"Download {nama}")
+    log(f"Download {nama}...")
 
     try:
         if stop_event.is_set():
@@ -218,12 +218,30 @@ def process_pegawai(obj, base_url, dir_rekap, log):
         if stop_event.is_set():
             return False
 
+        if progress_info:
+            with progress_info["lock"]:
+                progress_info["completed"] += 1
+                completed = progress_info["completed"]
+                total = progress_info["total"]
+                remaining = total - completed
+            log(f"{completed}/{total}: Download {nama} selesai.")
+        else:
+            log(f"Download {nama} selesai.")
+
         return True
     except Exception as e:
         if stop_event.is_set():
             # Jika dihentikan oleh user, abaikan log error Selenium agar tidak membingungkan
             return False
-        log(f"Error download {nama}: {str(e)}")
+        if progress_info:
+            with progress_info["lock"]:
+                progress_info["completed"] += 1
+                completed = progress_info["completed"]
+                total = progress_info["total"]
+                remaining = total - completed
+            log(f"Error download {nama}: {str(e)}. (Sudah didownload: {completed}/{total}, Belum: {remaining})")
+        else:
+            log(f"Error download {nama}: {str(e)}")
         return False
 
 def download_rekap(excel_pegawai, dir_rekap, bulan, tahun, log):
@@ -275,7 +293,17 @@ def download_rekap(excel_pegawai, dir_rekap, bulan, tahun, log):
         return
 
     max_workers = 5
+    total_files = len(items)
+    log(f"Total file yang akan didownload: {total_files} file.")
     log(f"Memulai download. {max_workers}x lebih cepat dari biasanya!")
+
+    progress_info = {
+        "lock": threading.Lock(),
+        "completed": 0,
+        "total": total_files
+    }
+
+    start_time = time.time()
 
     try:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -289,7 +317,8 @@ def download_rekap(excel_pegawai, dir_rekap, bulan, tahun, log):
                         obj,
                         BASE_URL,
                         dir_rekap,
-                        log
+                        log,
+                        progress_info
                     )
                 )
 
@@ -330,4 +359,5 @@ def download_rekap(excel_pegawai, dir_rekap, bulan, tahun, log):
     if stop_event.is_set():
         log("Download dihentikan oleh pengguna.")
     else:
-        log("Download selesai.")
+        duration = time.time() - start_time
+        log(f"Download selesai dalam {duration:.2f} detik.")
