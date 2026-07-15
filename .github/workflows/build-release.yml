@@ -56,10 +56,11 @@ jobs:
         tag_name: v1.0.${{ github.run_number }}
         name: "SIMAK-TPP v1.0.${{ github.run_number }}"
         body: |
-          ## SIMAK-TPP v1.0.${{ github.run_number }}
-
           📦 Build otomatis dari commit terbaru di branch `development`.
           🔨 Commit: `${{ github.sha }}`
+
+          ### Changelog / Perubahan
+          ${{ github.event.head_commit.message }}
 
           ### Cara Install
           1. Download file ZIP di bawah
