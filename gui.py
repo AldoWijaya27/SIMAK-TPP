@@ -322,7 +322,84 @@ class App:
             output_card, "Folder Penyimpanan Hasil"
         )
 
-        ctk.CTkFrame(output_card, height=10, fg_color="transparent").pack()
+        # ── Download Worker Setting ──
+        worker_section = ctk.CTkFrame(output_card, fg_color="transparent")
+        worker_section.pack(fill="x", padx=18, pady=(0, 10))
+
+        worker_header = ctk.CTkFrame(worker_section, fg_color="transparent")
+        worker_header.pack(fill="x")
+
+        ctk.CTkLabel(
+            worker_header,
+            text="⚡  Kecepatan Download",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_label"]
+        ).pack(side="left", anchor="w")
+
+        self.worker_value_label = ctk.CTkLabel(
+            worker_header,
+            text="5 worker  •  Normal",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=COLORS["accent_green"]
+        )
+        self.worker_value_label.pack(side="right", anchor="e")
+
+        self.worker_var = tk.IntVar(value=5)
+
+        def _on_worker_change(val):
+            n = int(float(val))
+            self.worker_var.set(n)
+            if n <= 2:
+                desc = "Lambat"
+                color = "#6B7280"
+            elif n <= 5:
+                desc = "Normal"
+                color = COLORS["accent_green"]
+            elif n <= 7:
+                desc = "Cepat"
+                color = "#D97706"
+            else:
+                desc = "Turbo 🚀"
+                color = "#DC2626"
+            self.worker_value_label.configure(
+                text=f"{n} worker  •  {desc}",
+                text_color=color
+            )
+
+        worker_slider = ctk.CTkSlider(
+            worker_section,
+            from_=1, to=10,
+            number_of_steps=9,
+            variable=self.worker_var,
+            command=_on_worker_change,
+            progress_color=COLORS["accent_green"],
+            button_color=COLORS["accent_green"],
+            button_hover_color=COLORS["accent_green_hover"],
+            fg_color=COLORS["card_border"],
+            height=18
+        )
+        worker_slider.pack(fill="x", pady=(6, 2))
+
+        hint_frame = ctk.CTkFrame(worker_section, fg_color="transparent")
+        hint_frame.pack(fill="x")
+        for hint_text, hint_anchor in [("1", "w"), ("5", "center"), ("10", "e")]:
+            ctk.CTkLabel(
+                hint_frame, text=hint_text,
+                font=ctk.CTkFont(size=9),
+                text_color=COLORS["text_secondary"],
+                anchor=hint_anchor
+            ).pack(side="left", expand=True, fill="x")
+
+        ctk.CTkLabel(
+            worker_section,
+            text="⚠ Worker lebih banyak = download lebih cepat, tapi lebih berat di RAM & CPU.",
+            font=ctk.CTkFont(size=9),
+            text_color=COLORS["text_secondary"],
+            wraplength=220,
+            justify="left"
+        ).pack(anchor="w", pady=(4, 0))
+
+        ctk.CTkFrame(output_card, height=4, fg_color="transparent").pack()
 
         # Period Card
         period_card = ctk.CTkFrame(right_col, fg_color=COLORS["card_bg"], corner_radius=10)
@@ -738,7 +815,6 @@ class App:
                 self.log_box._textbox.configure(state="disabled")
                 self.log_box.see("end")
 
-            self.root.update()
         self.root.after(0, _update)
 
     def _switch_log_tab(self, tab_name):
@@ -849,7 +925,8 @@ class App:
                 if stop_event.is_set():
                     return
                 self.log("── [1/6] Download Rekap Kehadiran ──")
-                download_rekap(excel_pegawai, DIR_REKAP, bulan, tahun, self.log)
+                max_workers = self.worker_var.get()
+                download_rekap(excel_pegawai, DIR_REKAP, bulan, tahun, self.log, max_workers)
 
             # STEP 1.5 — INPUT SPESIMEN
             if self.var_spesimen.get():

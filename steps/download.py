@@ -244,7 +244,7 @@ def process_pegawai(obj, base_url, dir_rekap, log, progress_info=None):
             log(f"Error download {nama}: {str(e)}")
         return False
 
-def download_rekap(excel_pegawai, dir_rekap, bulan, tahun, log):
+def download_rekap(excel_pegawai, dir_rekap, bulan, tahun, log, max_workers=5):
     global current_log, drivers, shared_cookies
     current_log = log
     stop_event.clear()
@@ -292,7 +292,7 @@ def download_rekap(excel_pegawai, dir_rekap, bulan, tahun, log):
         log("Download dihentikan oleh pengguna.")
         return
 
-    max_workers = 5
+    # max_workers sudah diterima dari parameter (default 5)
     total_files = len(items)
     log(f"Total file yang akan didownload: {total_files} file.")
     log(f"Memulai download. {max_workers}x lebih cepat dari biasanya!")
