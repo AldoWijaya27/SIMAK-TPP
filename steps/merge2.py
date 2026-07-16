@@ -57,6 +57,13 @@ def _run_windows_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_
         log(f"Total record CSV: {total_records}")
 
         for idx in range(total_records):
+            from steps.download import stop_event
+            if stop_event.is_set():
+                doc.Close(False)
+                word.Quit()
+                log("Proses Mail Merge dibatalkan oleh pengguna.")
+                raise SystemExit()
+
             row = df.iloc[idx]
 
             nama = sanitize_filename(str(row["NAMA"]))
@@ -120,6 +127,11 @@ def _run_macos_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_wo
     log(f"[MACOS] Total record CSV: {total_records}")
 
     for idx, row in df.iterrows():
+        from steps.download import stop_event
+        if stop_event.is_set():
+            log("Proses Mail Merge dibatalkan oleh pengguna.")
+            raise SystemExit()
+
         # Bersihkan NaN
         row_dict = row.to_dict()
         row_dict = {k: (v if pd.notna(v) else "") for k, v in row_dict.items()}

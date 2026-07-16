@@ -2,7 +2,7 @@ name: Build and Release
 
 on:
   push:
-    branches: [ "daniel-git-actions" ]
+    branches: [ "development" ]
 
 # Batalkan run sebelumnya jika ada push baru ke main
 # Hanya commit paling akhir yang akan selesai di-build
@@ -22,6 +22,7 @@ jobs:
       with:
         ref: development   # Checkout kode aplikasi dari branch development
         fetch-depth: 0     # Diperlukan untuk bisa push tag
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Ambil requirements.txt dan spec dari branch daniel-git-actions
       run: |
@@ -46,28 +47,20 @@ jobs:
 
     - name: Zip Build Output
       run: |
-        Compress-Archive -Path dist\SIMAK-TPP\* -DestinationPath SIMAK-TPP-Windows-latest.zip
+        Compress-Archive -Path dist\SIMAK-TPP\* -DestinationPath SIMAK-TPP-Windows-v1.0.${{ github.run_number }}.zip
       shell: pwsh
 
-    - name: Move tag 'latest' ke commit ini
-      run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-        git tag -f latest
-        git push origin -f latest
-      shell: bash
-
-    - name: Create or Update Latest Release
+    - name: Create New Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: latest
-        name: "SIMAK-TPP - Latest Build"
+        tag_name: v1.0.${{ github.run_number }}
+        name: "SIMAK-TPP v1.0.${{ github.run_number }}"
         body: |
-          ## SIMAK-TPP - Latest Build
-
-          📦 Build otomatis dari commit terbaru di branch `daniel-git-actions`.
+          📦 Build otomatis dari commit terbaru di branch `development`.
           🔨 Commit: `${{ github.sha }}`
-          🕐 Diperbarui: ${{ github.event.head_commit.timestamp }}
+
+          ### Changelog / Perubahan
+          ${{ github.event.head_commit.message }}
 
           ### Cara Install
           1. Download file ZIP di bawah
@@ -75,7 +68,7 @@ jobs:
           3. Jalankan `SIMAK-TPP.exe`
 
           > ⚠️ Semua file dalam folder ZIP harus tetap berada dalam satu folder yang sama dengan `SIMAK-TPP.exe`.
-        files: SIMAK-TPP-Windows-latest.zip
+        files: SIMAK-TPP-Windows-v1.0.${{ github.run_number }}.zip
         draft: false
         prerelease: false
         make_latest: true
