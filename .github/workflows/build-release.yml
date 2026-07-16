@@ -24,11 +24,6 @@ jobs:
         fetch-depth: 0     # Diperlukan untuk bisa push tag
         token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Ambil requirements.txt dan spec dari branch daniel-git-actions
-      run: |
-        git fetch origin daniel-git-actions
-        git checkout origin/daniel-git-actions -- requirements.txt SIMAK-TPP.spec
-      shell: bash
 
     - name: Set up Python 3.10
       uses: actions/setup-python@v5

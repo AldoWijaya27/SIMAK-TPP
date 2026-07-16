@@ -6,3 +6,6 @@ selenium
 webdriver-manager
 pdfplumber
 pyinstaller
+customtkinter
+tkinterdnd2
+Pillow
