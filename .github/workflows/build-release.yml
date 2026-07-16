@@ -2,8 +2,11 @@ name: Build and Release
 
 on:
   push:
-    branches: [ "development" ]
-
+    branches:
+      - main
+      - development
+    tags:
+      - 'v*'
 # Batalkan run sebelumnya jika ada push baru ke main
 # Hanya commit paling akhir yang akan selesai di-build
 concurrency:
@@ -17,12 +20,21 @@ jobs:
       contents: write
 
     steps:
-    - name: Checkout Code (development branch)
+    - name: Checkout Code
       uses: actions/checkout@v4
       with:
-        ref: development   # Checkout kode aplikasi dari branch development
         fetch-depth: 0     # Diperlukan untuk bisa push tag
         token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Determine Version
+      id: version
+      shell: bash
+      run: |
+        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
+        else
+          echo "VERSION=${{ github.ref_name }}-v${{ github.run_number }}" >> $GITHUB_ENV
+        fi
 
 
     - name: Set up Python 3.10
@@ -42,16 +54,17 @@ jobs:
 
     - name: Zip Build Output
       run: |
-        Compress-Archive -Path dist\SIMAK-TPP\* -DestinationPath SIMAK-TPP-Windows-v1.0.${{ github.run_number }}.zip
+        Compress-Archive -Path dist\SIMAK-TPP\* -DestinationPath SIMAK-TPP-Windows-${{ env.VERSION }}.zip
       shell: pwsh
 
     - name: Create New Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: v1.0.${{ github.run_number }}
-        name: "SIMAK-TPP v1.0.${{ github.run_number }}"
+        tag_name: ${{ env.VERSION }}
+        name: "SIMAK-TPP ${{ env.VERSION }}"
         body: |
-          📦 Build otomatis dari commit terbaru di branch `development`.
+          📦 Build otomatis dari commit terbaru.
+          🌿 Ref: `${{ github.ref_name }}`
           🔨 Commit: `${{ github.sha }}`
 
           ### Changelog / Perubahan
@@ -63,7 +76,7 @@ jobs:
           3. Jalankan `SIMAK-TPP.exe`
 
           > ⚠️ Semua file dalam folder ZIP harus tetap berada dalam satu folder yang sama dengan `SIMAK-TPP.exe`.
-        files: SIMAK-TPP-Windows-v1.0.${{ github.run_number }}.zip
+        files: SIMAK-TPP-Windows-${{ env.VERSION }}.zip
         draft: false
         prerelease: false
         make_latest: true
