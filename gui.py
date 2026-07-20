@@ -14,6 +14,7 @@ from steps.input_spesimen import input_spesimen
 from steps.analisis import analisis_kehadiran
 from steps.merge2 import process_mail_merge
 from steps.merge_pdf_jabatan import merge_pdf_by_jabatan
+from steps.split_pdf_jabatan import split_pdf_jabatan
 from config import TEMPLATE_WORD
 from services.firebase_access import FirebaseRealtimeUserAccessGateway, ValidateUserAccess
 
@@ -172,6 +173,7 @@ class App:
             ("Generate CSV",              "📄"),
             ("Mail Merge TPP",            "📨"),
             ("Merge PDF\nper Jabatan",    "🗂️"),
+            ("Pecah & Distribusi\nDokumen TTD", "✂️"),
         ]
 
         self.step_vars = []
@@ -239,6 +241,7 @@ class App:
         self.var_csv           = self.step_vars[4]
         self.var_mailmerge     = self.step_vars[5]
         self.var_merge_jabatan = self.step_vars[6]
+        self.var_split_pdf     = self.step_vars[7]
 
         # ── Footer ──
         ctk.CTkLabel(
@@ -301,6 +304,9 @@ class App:
         )
         self.entry_kalender_json = self._create_file_input(
             source_card, "Kalender Kerja JSON (opsional)", "json"
+        )
+        self.entry_pdf_gabungan = self._create_file_input(
+            source_card, "File PDF Gabungan (TTD) (opsional)", "pdf"
         )
 
         # Bottom padding
@@ -606,6 +612,9 @@ class App:
         if file_type == "xlsx":
             filetypes = [("Excel Workbook", "*.xlsx")]
             btn_icon = "📗"
+        elif file_type == "pdf":
+            filetypes = [("PDF File", "*.pdf")]
+            btn_icon = "📕"
         else:
             filetypes = [("JSON File", "*.json")]
             btn_icon = "📋"
@@ -927,7 +936,7 @@ class App:
             if self.var_download.get():
                 if stop_event.is_set():
                     return
-                self.log("── [1/7] Download Rekap Kehadiran ──")
+                self.log("── [1/8] Download Rekap Kehadiran ──")
                 max_workers = self.worker_var.get()
                 download_rekap(excel_pegawai, DIR_REKAP, bulan, tahun, self.log, max_workers)
 
@@ -935,21 +944,21 @@ class App:
             if self.var_spesimen.get():
                 if stop_event.is_set():
                     return
-                self.log("── [2/7] Input Spesimen Tanda Tangan ──")
+                self.log("── [2/8] Input Spesimen Tanda Tangan ──")
                 input_spesimen(DIR_REKAP, DIR_REKAP_DITANDATANGANI, self.log)
 
             # STEP 2 — ANALISIS
             if self.var_analisis.get():
                 if stop_event.is_set():
                     return
-                self.log("── [3/7] Analisis Kehadiran ──")
+                self.log("── [3/8] Analisis Kehadiran ──")
                 analisis_kehadiran(DIR_REKAP, excel, output_excel, self.log, json_kalender)
 
             # STEP 3 — MERGE EKIN APEL
             if self.var_merge.get():
                 if stop_event.is_set():
                     return
-                self.log("── [4/7] Gabung Ekin & Apel ──")
+                self.log("── [4/8] Gabung Ekin & Apel ──")
                 status, pesan = merge_ekin_apel(
                     ekin_apel,
                     output_excel,
@@ -965,22 +974,30 @@ class App:
             if self.var_csv.get():
                 if stop_event.is_set():
                     return
-                self.log("── [5/7] Generate CSV ──")
+                self.log("── [5/8] Generate CSV ──")
                 excel_sheet_disiplin_ke_csv(output_template_ready, base_dir)
 
             # STEP 5 — MAIL MERGE
             if self.var_mailmerge.get():
                 if stop_event.is_set():
                     return
-                self.log("── [6/7] Mail Merge TPP ──")
+                self.log("── [6/8] Mail Merge TPP ──")
                 process_mail_merge(DIR_REKAP_DITANDATANGANI, DIR_OUTPUT, TEMP_DIR, csv_output, word, self.log)
 
             # STEP 6 — MERGE PDF PER JABATAN
             if self.var_merge_jabatan.get():
                 if stop_event.is_set():
                     return
-                self.log("── [7/7] Merge PDF per Jabatan ──")
+                self.log("── [7/8] Merge PDF per Jabatan ──")
                 merge_pdf_by_jabatan(DIR_OUTPUT, csv_output, bulan, tahun, self.log)
+
+            # STEP 7 — PECAH & DISTRIBUSI DOKUMEN TTD
+            if self.var_split_pdf.get():
+                if stop_event.is_set():
+                    return
+                self.log("── [8/8] Pecah & Distribusi Dokumen TTD ──")
+                pdf_gabungan = self.entry_pdf_gabungan.get()
+                split_pdf_jabatan(DIR_OUTPUT, csv_output, bulan, tahun, self.log, pdf_gabungan)
 
             # Jika berhasil semua
             if not stop_event.is_set():
