@@ -136,6 +136,65 @@ def _run_macos_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_wo
         row_dict = row.to_dict()
         row_dict = {k: (v if pd.notna(v) else "") for k, v in row_dict.items()}
 
+        # --- Normalisasi key CSV agar cocok dengan merge field di template ---
+        # Masalah: kolom CSV pakai spasi (dari Excel), tapi merge field di Word
+        # pakai underscore. Selain itu, casing-nya juga bisa beda.
+        # Solusi: baca merge field dari template, lalu cocokkan via case-insensitive.
+        import re
+
+        # Bangun mapping: key CSV yang dinormalisasi -> merge field asli di template
+        if not hasattr(_run_macos_mail_merge, '_template_fields'):
+            with MailMerge(template_word) as tmp_doc:
+                _run_macos_mail_merge._template_fields = tmp_doc.get_merge_fields()
+
+        template_fields = _run_macos_mail_merge._template_fields
+
+        # Buat lookup dari template fields: lowercase -> nama asli
+        field_lookup = {f.lower(): f for f in template_fields}
+
+        mapped_dict = {}
+        for csv_key, val in row_dict.items():
+            # Normalisasi key CSV: ganti karakter non-alfanumerik jadi underscore
+            norm_key = re.sub(r'[^A-Za-z0-9_]', '_', csv_key)
+            norm_key = re.sub(r'_+', '_', norm_key)
+            norm_key = norm_key.strip('_')
+
+            # Coba cocokkan (case-insensitive) ke merge field template
+            real_field = field_lookup.get(norm_key.lower())
+            if real_field:
+                mapped_dict[real_field] = val
+            else:
+                # Coba juga dengan trailing underscore (untuk kasus "Skor Kehadiran (%)")
+                real_field_trail = field_lookup.get((norm_key + '_').lower())
+                if real_field_trail:
+                    mapped_dict[real_field_trail] = val
+                else:
+                    # Simpan apa adanya untuk field lain (NAMA, BIDANG, dll)
+                    mapped_dict[csv_key] = val
+
+        # --- Mapping manual untuk edge case ---
+        # Word mengkonversi "< 15 menit" menjadi "M__15_menit" dst.
+        _manual_map = {
+            "< 15 menit": "M__15_menit",
+            "< 30 menit": "M__30_menit",
+            "< 60 menit": "M__60_menit",
+            "> 60 menit": "M__60_menit1",
+        }
+        for csv_col, merge_field in _manual_map.items():
+            # Cari kolom CSV (case-insensitive)
+            for orig_key, val in row.to_dict().items():
+                if orig_key.strip().lower() == csv_col.lower():
+                    if merge_field in template_fields:
+                        mapped_dict[merge_field] = val if pd.notna(val) else ""
+                    break
+
+        # Duplikat field: template punya "Bulan" dan "BULAN" yang merujuk data sama
+        if "Bulan" in template_fields and "Bulan" not in mapped_dict:
+            bulan_val = mapped_dict.get("BULAN", "")
+            mapped_dict["Bulan"] = bulan_val
+
+        row_dict = mapped_dict
+
         nama = sanitize_filename(str(row_dict.get("NAMA", f"Pegawai_{idx+1}")))
         bidang = str(row_dict.get("BIDANG", "Umum"))
 

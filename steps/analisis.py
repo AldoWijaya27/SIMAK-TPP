@@ -43,6 +43,13 @@ def klasifikasi_keterlambatan(jam, tanggal, kalender):
 def analisis_kehadiran(dir_rekap, template_excel, output_excel, log, json_kalender_kerja=""):
 
     kalender = WorkCalendar(json_kalender_kerja)
+    if json_kalender_kerja:
+        if kalender.rules:
+            log(f"✅ Berhasil memuat kalender kerja kustom: {os.path.basename(json_kalender_kerja)}")
+            for r in kalender.rules:
+                log(f"   • {r['nama']}: {r['mulai']} s/d {r['selesai']} (Jam Masuk: {r['jam_masuk']})")
+        else:
+            log(f"⚠ File kalender kerja ditentukan ({os.path.basename(json_kalender_kerja)}) tetapi kosong atau gagal dimuat. Menggunakan default ASN 07:30.")
 
     def parse_jam(teks):
         if not teks:

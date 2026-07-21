@@ -1,0 +1,14 @@
+[
+    {
+        "nama": "Jam Kerja Normal",
+        "mulai": "2026-01-01",
+        "selesai": "2026-02-17",
+        "jam_masuk": "07:30:00"
+    },
+    {
+        "nama": "Jam Kerja Ramadan",
+        "mulai": "2026-02-18",
+        "selesai": "2026-03-18",
+        "jam_masuk": "08:00:00"
+    }
+]

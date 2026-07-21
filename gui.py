@@ -303,7 +303,7 @@ class App:
             source_card, "Data Ekin & Apel (Excel)", "xlsx"
         )
         self.entry_kalender_json = self._create_file_input(
-            source_card, "Kalender Kerja JSON (opsional)", "json"
+            source_card, "Kalender Kerja Excel (opsional)", "xlsx"
         )
         self.entry_pdf_gabungan = self._create_file_input(
             source_card, "File PDF Gabungan (TTD) (opsional)", "pdf"
@@ -391,13 +391,15 @@ class App:
 
         hint_frame = ctk.CTkFrame(worker_section, fg_color="transparent")
         hint_frame.pack(fill="x")
-        for hint_text, hint_anchor in [("1", "w"), ("5", "center"), ("10", "e")]:
-            ctk.CTkLabel(
-                hint_frame, text=hint_text,
-                font=ctk.CTkFont(size=9),
-                text_color=COLORS["text_secondary"],
-                anchor=hint_anchor
-            ).pack(side="left", expand=True, fill="x")
+        hint_frame.grid_columnconfigure(0, weight=0)
+        hint_frame.grid_columnconfigure(1, weight=4)
+        hint_frame.grid_columnconfigure(2, weight=0)
+        hint_frame.grid_columnconfigure(3, weight=5)
+        hint_frame.grid_columnconfigure(4, weight=0)
+
+        ctk.CTkLabel(hint_frame, text="1", font=ctk.CTkFont(size=9), text_color=COLORS["text_secondary"]).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(hint_frame, text="5", font=ctk.CTkFont(size=9), text_color=COLORS["text_secondary"]).grid(row=0, column=2)
+        ctk.CTkLabel(hint_frame, text="10", font=ctk.CTkFont(size=9), text_color=COLORS["text_secondary"]).grid(row=0, column=4, sticky="e")
 
         ctk.CTkLabel(
             worker_section,
@@ -638,10 +640,13 @@ class App:
                 def on_drop(event):
                     # Clean path from braces (macOS sometimes wraps paths)
                     dropped = event.data.strip().strip('{}')
-                    if dropped.lower().endswith(f'.{file_type}'):
+                    ext = os.path.splitext(dropped)[1].lower()
+                    valid_exts = [f'.{file_type}']
+                    
+                    if ext in valid_exts:
                         path_var.set(dropped)
                     else:
-                        messagebox.showwarning("Format Salah", f"File harus berformat .{file_type}")
+                        messagebox.showwarning("Format Salah", f"File harus berformat {', '.join(valid_exts)}")
                     entry.configure(border_color=COLORS["card_border"])
                 def on_enter(event):
                     entry.configure(border_color=COLORS["accent_green"])
