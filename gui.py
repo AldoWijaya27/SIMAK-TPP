@@ -15,6 +15,7 @@ from steps.analisis import analisis_kehadiran
 from steps.merge2 import process_mail_merge
 from steps.merge_pdf_jabatan import merge_pdf_by_jabatan
 from steps.split_pdf_jabatan import split_pdf_jabatan
+from steps.rekap_apel import rekap_kehadiran_apel
 from config import TEMPLATE_WORD
 from services.firebase_access import FirebaseRealtimeUserAccessGateway, ValidateUserAccess
 
@@ -157,12 +158,38 @@ class App:
         separator = ctk.CTkFrame(sidebar, height=1, fg_color=COLORS["sidebar_hover"])
         separator.pack(fill="x", padx=15, pady=(0, 10))
 
-        # ── Section Label ──
+        # ── Section Label & Master Checkbox ──
+        section_header = ctk.CTkFrame(sidebar, fg_color="transparent")
+        section_header.pack(fill="x", padx=15, pady=(0, 10))
+
         ctk.CTkLabel(
-            sidebar, text="SIMAK-TPP · PILIH PROSES",
+            section_header, text="SIMAK-TPP · PILIH PROSES",
             font=ctk.CTkFont(family="Helvetica", size=10),
             text_color=COLORS["sidebar_subtext"]
-        ).pack(padx=15, anchor="w", pady=(0, 10))
+        ).pack(side="left", anchor="w")
+
+        self.var_master_check = ctk.BooleanVar(value=True)
+
+        def _on_master_check_toggle():
+            val = self.var_master_check.get()
+            for var in self.step_vars:
+                var.set(val)
+
+        self.master_checkbox = ctk.CTkCheckBox(
+            section_header,
+            text="Pilih Semua",
+            variable=self.var_master_check,
+            command=_on_master_check_toggle,
+            font=ctk.CTkFont(family="Helvetica", size=10, weight="bold"),
+            text_color=COLORS["sidebar_subtext"],
+            fg_color=COLORS["switch_on"],
+            hover_color=COLORS["accent_green_hover"],
+            border_color=COLORS["sidebar_subtext"],
+            checkbox_width=16,
+            checkbox_height=16,
+            corner_radius=4
+        )
+        self.master_checkbox.pack(side="right", anchor="e")
 
         # ── Process Steps ──
         self.step_definitions = [
@@ -174,6 +201,7 @@ class App:
             ("Mail Merge TPP",            "📨"),
             ("Merge PDF\nper Jabatan",    "🗂️"),
             ("Pecah & Distribusi\nDokumen TTD", "✂️"),
+            ("Rekap Kehadiran\nApel", "📋"),
         ]
 
         self.step_vars = []
@@ -242,6 +270,7 @@ class App:
         self.var_mailmerge     = self.step_vars[5]
         self.var_merge_jabatan = self.step_vars[6]
         self.var_split_pdf     = self.step_vars[7]
+        self.var_rekap_apel    = self.step_vars[8]
 
         # ── Footer ──
         ctk.CTkLabel(
@@ -941,7 +970,7 @@ class App:
             if self.var_download.get():
                 if stop_event.is_set():
                     return
-                self.log("── [1/8] Download Rekap Kehadiran ──")
+                self.log("── [1/9] Download Rekap Kehadiran ──")
                 max_workers = self.worker_var.get()
                 download_rekap(excel_pegawai, DIR_REKAP, bulan, tahun, self.log, max_workers)
 
@@ -949,21 +978,21 @@ class App:
             if self.var_spesimen.get():
                 if stop_event.is_set():
                     return
-                self.log("── [2/8] Input Spesimen Tanda Tangan ──")
+                self.log("── [2/9] Input Spesimen Tanda Tangan ──")
                 input_spesimen(DIR_REKAP, DIR_REKAP_DITANDATANGANI, self.log)
 
             # STEP 2 — ANALISIS
             if self.var_analisis.get():
                 if stop_event.is_set():
                     return
-                self.log("── [3/8] Analisis Kehadiran ──")
+                self.log("── [3/9] Analisis Kehadiran ──")
                 analisis_kehadiran(DIR_REKAP, excel, output_excel, self.log, json_kalender)
 
             # STEP 3 — MERGE EKIN APEL
             if self.var_merge.get():
                 if stop_event.is_set():
                     return
-                self.log("── [4/8] Gabung Ekin & Apel ──")
+                self.log("── [4/9] Gabung Ekin & Apel ──")
                 status, pesan = merge_ekin_apel(
                     ekin_apel,
                     output_excel,
@@ -979,30 +1008,37 @@ class App:
             if self.var_csv.get():
                 if stop_event.is_set():
                     return
-                self.log("── [5/8] Generate CSV ──")
+                self.log("── [5/9] Generate CSV ──")
                 excel_sheet_disiplin_ke_csv(output_template_ready, base_dir)
 
             # STEP 5 — MAIL MERGE
             if self.var_mailmerge.get():
                 if stop_event.is_set():
                     return
-                self.log("── [6/8] Mail Merge TPP ──")
+                self.log("── [6/9] Mail Merge TPP ──")
                 process_mail_merge(DIR_REKAP_DITANDATANGANI, DIR_OUTPUT, TEMP_DIR, csv_output, word, self.log)
 
             # STEP 6 — MERGE PDF PER JABATAN
             if self.var_merge_jabatan.get():
                 if stop_event.is_set():
                     return
-                self.log("── [7/8] Merge PDF per Jabatan ──")
+                self.log("── [7/9] Merge PDF per Jabatan ──")
                 merge_pdf_by_jabatan(DIR_OUTPUT, csv_output, bulan, tahun, self.log)
 
             # STEP 7 — PECAH & DISTRIBUSI DOKUMEN TTD
             if self.var_split_pdf.get():
                 if stop_event.is_set():
                     return
-                self.log("── [8/8] Pecah & Distribusi Dokumen TTD ──")
+                self.log("── [8/9] Pecah & Distribusi Dokumen TTD ──")
                 pdf_gabungan = self.entry_pdf_gabungan.get()
                 split_pdf_jabatan(DIR_OUTPUT, csv_output, bulan, tahun, self.log, pdf_gabungan)
+
+            # STEP 9 — REKAP KEHADIRAN APEL
+            if self.var_rekap_apel.get():
+                if stop_event.is_set():
+                    return
+                self.log("── [9/9] Rekap Kehadiran Apel ──")
+                rekap_kehadiran_apel(DIR_REKAP, excel_pegawai, bulan, tahun, None, self.log)
 
             # Jika berhasil semua
             if not stop_event.is_set():
