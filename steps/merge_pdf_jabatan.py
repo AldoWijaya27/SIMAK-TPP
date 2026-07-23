@@ -12,7 +12,8 @@ from utils import merge_pdf, sanitize_filename
 # Tambahkan kelompok baru di sini sesuai kebutuhan.
 # ============================================================
 KELOMPOK_JABATAN = [
-    ("Kepala Dinas", ["kepala dinas"]),
+    ("Kepala Bidang", ["kepala bidang"]),
+    ("Kepala UPTD", ["kepala uptd"]),
     ("Sekretaris",   ["sekretaris"]),
     ("Madya",        ["madya"]),
 ]

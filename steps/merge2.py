@@ -1,5 +1,6 @@
 from logging import log
 import os
+import time
 import pandas as pd
 import urllib.parse
 import platform
@@ -56,6 +57,8 @@ def _run_windows_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_
 
         log(f"Total record CSV: {total_records}")
 
+        t_start = time.time()
+
         for idx in range(total_records):
             from steps.download import stop_event
             if stop_event.is_set():
@@ -69,7 +72,19 @@ def _run_windows_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_
             nama = sanitize_filename(str(row["NAMA"]))
             bidang = str(row["BIDANG"])
 
-            log(f"Processing {nama}")
+            # Estimasi waktu tersisa
+            elapsed = time.time() - t_start
+            if idx > 0:
+                avg_per_item = elapsed / idx
+                sisa = avg_per_item * (total_records - idx)
+                if sisa >= 60:
+                    est_text = f"~{int(sisa // 60)} menit {int(sisa % 60)} detik tersisa"
+                else:
+                    est_text = f"~{int(sisa)} detik tersisa"
+            else:
+                est_text = "menghitung..."
+
+            log(f"  [{idx + 1}/{total_records}] {nama} — {est_text}")
 
             doc.MailMerge.Destination = 0  # New document
             doc.MailMerge.DataSource.FirstRecord = idx + 1
@@ -125,6 +140,9 @@ def _run_macos_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_wo
     df.columns = df.columns.str.strip().str.upper()
     total_records = len(df)
     log(f"[MACOS] Total record CSV: {total_records}")
+
+    t_start = time.time()
+    loop_idx = 0
 
     for idx, row in df.iterrows():
         from steps.download import stop_event
@@ -198,7 +216,20 @@ def _run_macos_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_wo
         nama = sanitize_filename(str(row_dict.get("NAMA", f"Pegawai_{idx+1}")))
         bidang = str(row_dict.get("BIDANG", "Umum"))
 
-        log(f"Processing {nama} ({bidang})")
+        # Estimasi waktu tersisa
+        elapsed = time.time() - t_start
+        if loop_idx > 0:
+            avg_per_item = elapsed / loop_idx
+            sisa = avg_per_item * (total_records - loop_idx)
+            if sisa >= 60:
+                est_text = f"~{int(sisa // 60)} menit {int(sisa % 60)} detik tersisa"
+            else:
+                est_text = f"~{int(sisa)} detik tersisa"
+        else:
+            est_text = "menghitung..."
+
+        log(f"  [{loop_idx + 1}/{total_records}] {nama} ({bidang}) — {est_text}")
+        loop_idx += 1
 
         # 1. Jalankan mail merge di memory dan simpan sebagai docx sementara
         temp_docx = os.path.abspath(os.path.join(TEMP_DIR, f"{nama}.docx"))
