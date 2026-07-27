@@ -14,8 +14,8 @@ a = Analysis(
     excludes=[
         # Stdlib berat yang tidak dipakai
         'unittest', 'test', 'distutils', 'setuptools', 'pkg_resources',
-        'email', 'http', 'urllib', 'xmlrpc', 'ftplib', 'imaplib',
-        'poplib', 'smtplib', 'telnetlib', 'nntplib', 'ssl',
+        'xmlrpc', 'ftplib', 'imaplib',
+        'poplib', 'smtplib', 'telnetlib', 'nntplib',
         'multiprocessing', 'concurrent', 'asyncio', 'curses',
         'doctest', 'pdb', 'profile', 'pstats', 'cProfile',
         'lib2to3', 'tkinter.test', 'idlelib',
