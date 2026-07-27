@@ -41,41 +41,19 @@ jobs:
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install --no-cache-dir -r requirements.txt
-
-    - name: Install UPX
-      shell: pwsh
-      run: |
-        $upxVersion = "4.2.4"
-        $url = "https://github.com/upx/upx/releases/download/v${upxVersion}/upx-${upxVersion}-win64.zip"
-        Invoke-WebRequest -Uri $url -OutFile upx.zip
-        Expand-Archive upx.zip -DestinationPath upx_dir
-        $upxPath = (Get-ChildItem -Path upx_dir -Recurse -Filter "upx.exe").DirectoryName
-        echo $upxPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-        Write-Host "UPX installed at: $upxPath"
+        pip install -r requirements.txt
 
     - name: Build Executable
       run: |
         pyinstaller SIMAK-TPP.spec
       shell: cmd
 
-    - name: Remove Unnecessary Files from Build
-      shell: pwsh
-      run: |
-        $distPath = "dist\SIMAK-TPP"
-        $patterns = @('*.pyi', '*.pyc', 'test_*.pyd', '*test*.pyd')
-        foreach ($p in $patterns) {
-          Get-ChildItem -Path $distPath -Recurse -Filter $p -ErrorAction SilentlyContinue | Remove-Item -Force
-        }
-        Get-ChildItem -Path $distPath -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "Cleanup selesai"
-
     - name: Zip Build Output
       run: |
         Compress-Archive -Path dist\SIMAK-TPP\* -DestinationPath SIMAK-TPP-Windows-${{ env.VERSION }}.zip
       shell: pwsh
 
-    - name: Create Release
+    - name: Create New Release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ env.VERSION }}
