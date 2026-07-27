@@ -922,9 +922,12 @@ class App:
     # ══════════════════════════════════════════════════════════
     def jalankan(self):
         try:
-            base_dir = self.entry_base_dir.get()
+            base_dir = self.entry_folder_utama.get()
+            if not base_dir or not os.path.exists(base_dir):
+                self.root.after(0, lambda: self._set_status("● Folder Utama belum dipilih", COLORS["status_error"]))
+                self.root.after(0, lambda: messagebox.showerror("Error", "Folder Utama belum dipilih atau folder tidak ditemukan."))
+                return
 
-            # NORMALISASI KERAS
             base_dir = os.path.abspath(base_dir)
             base_dir = os.path.normpath(base_dir)
             base_dir = base_dir.strip()
@@ -960,6 +963,10 @@ class App:
             if self.var_download.get():
                 if stop_event.is_set():
                     return
+                if not excel_pegawai or not os.path.exists(excel_pegawai):
+                    self.log("❌ File Data Pegawai Excel belum dipilih atau file tidak ditemukan.")
+                    messagebox.showerror("Error", "File Data Pegawai Excel belum dipilih atau file tidak ditemukan.")
+                    return
                 self.log("── [1/7] Download Rekap Kehadiran ──")
                 max_workers = self.worker_var.get()
                 download_rekap(excel_pegawai, DIR_REKAP, bulan, tahun, self.log, max_workers)
@@ -979,6 +986,10 @@ class App:
             # STEP 2 — REKAP KEHADIRAN APEL
             if self.var_rekap_apel.get():
                 if stop_event.is_set():
+                    return
+                if not excel_pegawai or not os.path.exists(excel_pegawai):
+                    self.log("❌ File Data Pegawai Excel belum dipilih atau file tidak ditemukan.")
+                    messagebox.showerror("Error", "File Data Pegawai Excel belum dipilih atau file tidak ditemukan.")
                     return
                 self.log("── [2/7] Rekap Kehadiran Apel ──")
                 rekap_kehadiran_apel(DIR_REKAP_DITANDATANGANI, excel_pegawai, bulan, tahun, None, self.log, ekin_apel)
@@ -1020,6 +1031,10 @@ class App:
             # STEP 4 — CSV
             if self.var_csv.get():
                 if stop_event.is_set():
+                    return
+                if not os.path.exists(output_template_ready):
+                    self.log("❌ File Disiplin_TPP_Lengkap.xlsx tidak ditemukan. Jalankan step sebelumnya terlebih dahulu.")
+                    messagebox.showerror("Error", "File Disiplin_TPP_Lengkap.xlsx tidak ditemukan. Jalankan step sebelumnya terlebih dahulu.")
                     return
                 self.log("── [4/7] Generate CSV ──")
                 excel_sheet_disiplin_ke_csv(output_template_ready, base_dir)
