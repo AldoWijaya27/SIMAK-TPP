@@ -4,7 +4,7 @@ import calendar
 from datetime import datetime, date, time
 
 import pdfplumber
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
@@ -234,26 +234,147 @@ def _status_apel(tanggal_obj, jam_masuk_time, is_public_holiday=False):
 # =========================================================
 # FUNGSI UTAMA: Rekap Kehadiran Apel
 # =========================================================
-def rekap_kehadiran_apel(dir_rekap, excel_pegawai, bulan, tahun, output_path, log):
+def _tulis_sheet_rekap_apel(ws, bidang, daftar_peg, tanggal_bulan, pdf_map, tanggal_ada_di_pdf, nama_bulan_text, tahun_int):
     """
-    Membuat file Excel Rekap Kehadiran Apel per Bidang.
+    Mengisi satu worksheet dengan tabel rekap kehadiran apel untuk suatu bidang.
+    Mengembalikan dict mapping nip -> total_tk.
+    """
+    # ── Header Judul (Row 1-4) ──
+    ws.cell(row=1, column=1, value="REKAPITULASI APEL").font = FONT_TITLE
+    ws.cell(row=2, column=1, value=f"BIDANG/KPH : {bidang}").font = FONT_TITLE
+    ws.cell(row=3, column=1, value=f"BULAN : {nama_bulan_text} {tahun_int}").font = FONT_TITLE
+
+    # ── Tabel Header (Row 5) ──
+    header_row = 5
+    kolom_tetap = ["No", "NIP", "Nama", "Jabatan"]
+    kolom_tanggal = [str(tgl.day) for tgl in tanggal_bulan]
+    headers = kolom_tetap + kolom_tanggal + ["Total TK"]
+
+    for col_idx, header_text in enumerate(headers, 1):
+        cell = ws.cell(row=header_row, column=col_idx, value=header_text)
+        cell.fill = FILL_HEADER
+        cell.font = FONT_HEADER
+        cell.alignment = ALIGN_CENTER
+        cell.border = THIN_BORDER
+
+    # ── Data Rows (mulai dari row 6) ──
+    col_start_tanggal = len(kolom_tetap) + 1
+    col_total_tk = len(headers)
+    data_start_row = header_row + 1
+    nip_to_tk = {}
+
+    for row_offset, peg in enumerate(daftar_peg):
+        row_idx = data_start_row + row_offset
+        nama = peg["nama"]
+        nip = peg["nip"]
+        jabatan = peg["jabatan"]
+
+        ws.cell(row=row_idx, column=1, value=row_offset + 1).font = FONT_NORMAL
+        ws.cell(row=row_idx, column=1).alignment = ALIGN_CENTER
+        ws.cell(row=row_idx, column=1).border = THIN_BORDER
+
+        ws.cell(row=row_idx, column=2, value=nip).font = FONT_NORMAL
+        ws.cell(row=row_idx, column=2).alignment = ALIGN_LEFT
+        ws.cell(row=row_idx, column=2).border = THIN_BORDER
+
+        ws.cell(row=row_idx, column=3, value=nama).font = FONT_NORMAL
+        ws.cell(row=row_idx, column=3).alignment = ALIGN_LEFT
+        ws.cell(row=row_idx, column=3).border = THIN_BORDER
+
+        ws.cell(row=row_idx, column=4, value=jabatan).font = FONT_NORMAL
+        ws.cell(row=row_idx, column=4).alignment = ALIGN_LEFT
+        ws.cell(row=row_idx, column=4).border = THIN_BORDER
+
+        from utils import sanitize_filename
+        jam_data = (
+            pdf_map.get(nama)
+            or pdf_map.get(nama.lower())
+            or pdf_map.get(sanitize_filename(nama).lower(), {})
+        )
+
+        total_tk = 0
+
+        for tgl_idx, tgl in enumerate(tanggal_bulan):
+            col = col_start_tanggal + tgl_idx
+            jam_masuk = jam_data.get(tgl, None)
+
+            is_public_holiday = (tgl not in tanggal_ada_di_pdf)
+            status, is_tk = _status_apel(tgl, jam_masuk, is_public_holiday)
+
+            if status == "__WFH__":
+                cell = ws.cell(row=row_idx, column=col, value="")
+                cell.fill = FILL_WFH
+                cell.font = FONT_WFH
+            elif status == "__LIBUR__":
+                cell = ws.cell(row=row_idx, column=col, value="")
+                cell.fill = FILL_LIBUR
+                cell.font = FONT_LIBUR
+            elif status == "TK":
+                cell = ws.cell(row=row_idx, column=col, value="TK")
+                cell.fill = FILL_TK
+                cell.font = FONT_TK
+                total_tk += 1
+            elif status:
+                cell = ws.cell(row=row_idx, column=col, value=status)
+                cell.fill = FILL_KETERANGAN
+                cell.font = FONT_KETERANGAN
+            else:
+                cell = ws.cell(row=row_idx, column=col, value="")
+                cell.font = FONT_NORMAL
+
+            cell.alignment = ALIGN_CENTER
+            cell.border = THIN_BORDER
+
+        cell_total = ws.cell(row=row_idx, column=col_total_tk, value=total_tk)
+        cell_total.font = Font(name="Calibri", size=10, bold=True)
+        cell_total.alignment = ALIGN_CENTER
+        cell_total.border = THIN_BORDER
+        if total_tk > 0:
+            cell_total.fill = FILL_TK
+
+        if nip:
+            nip_clean = str(nip).replace(" ", "").strip()
+            nip_to_tk[nip_clean] = total_tk
+
+    # ── Atur lebar kolom ──
+    ws.column_dimensions[get_column_letter(1)].width = 5    # No
+    ws.column_dimensions[get_column_letter(2)].width = 22   # NIP
+    ws.column_dimensions[get_column_letter(3)].width = 30   # Nama
+    ws.column_dimensions[get_column_letter(4)].width = 25   # Jabatan
+
+    for tgl_idx in range(len(tanggal_bulan)):
+        col = col_start_tanggal + tgl_idx
+        ws.column_dimensions[get_column_letter(col)].width = 5
+
+    ws.column_dimensions[get_column_letter(col_total_tk)].width = 10
+    ws.freeze_panes = f"E{data_start_row}"
+
+    return nip_to_tk
+
+
+# =========================================================
+# FUNGSI UTAMA: Rekap Kehadiran Apel
+# =========================================================
+def rekap_kehadiran_apel(dir_rekap, excel_pegawai, bulan, tahun, output_path, log, ekin_apel_excel=None):
+    """
+    Membuat file Excel Rekap Kehadiran Apel per Bidang dan File Master.
+    Juga mengisikan Total TK ke kolom TMA di file Ekin & Apel.
 
     Args:
-        dir_rekap     (str): Folder REKAP KEHADIRAN (berisi subfolder per bidang, berisi PDF)
-        excel_pegawai (str): Path ke file Excel Data Pegawai
-        bulan         (str): Bulan periode (mis. "06")
-        tahun         (int): Tahun periode (mis. 2026)
-        output_path   (str): Path output file .xlsx
-        log           (callable): Fungsi log ke GUI
+        dir_rekap        (str): Folder REKAP KEHADIRAN DITANDATANGANI
+        excel_pegawai    (str): Path ke file Excel Data Pegawai
+        bulan            (str): Bulan periode (mis. "06")
+        tahun            (int): Tahun periode (mis. 2026)
+        output_path      (str): Path output (opsional/legacy)
+        log              (callable): Fungsi log ke GUI
+        ekin_apel_excel  (str): Path ke file Excel Data Ekin & Apel (opsional)
     """
     log("── Memulai proses Rekap Kehadiran Apel ──")
 
     bulan_int = int(bulan)
     tahun_int = int(tahun)
 
-    # =====================================================
     # 1. Baca Data Pegawai
-    # =====================================================
     log("  [1/4] Membaca data pegawai...")
     pegawai_list, bidang_order = _baca_data_pegawai(excel_pegawai, log)
 
@@ -261,22 +382,14 @@ def rekap_kehadiran_apel(dir_rekap, excel_pegawai, bulan, tahun, output_path, lo
         log("❌ Tidak ada data pegawai ditemukan.")
         return
 
-    # =====================================================
     # 2. Susun daftar tanggal dalam bulan
-    # =====================================================
     jumlah_hari = calendar.monthrange(tahun_int, bulan_int)[1]
     tanggal_bulan = [date(tahun_int, bulan_int, d) for d in range(1, jumlah_hari + 1)]
-
     log(f"  Periode: Bulan {bulan_int}, Tahun {tahun_int} ({jumlah_hari} hari)")
 
-    # =====================================================
     # 3. Baca semua PDF Rekap Kehadiran
-    # =====================================================
     log("  [2/4] Membaca file PDF rekap kehadiran...")
-
-    # Kumpulkan semua PDF
-    pdf_map = {}  # nama -> { date: jam_masuk_time }
-
+    pdf_map = {}
     pdf_files = []
     for root, dirs, files in os.walk(dir_rekap):
         for file in files:
@@ -299,7 +412,6 @@ def rekap_kehadiran_apel(dir_rekap, excel_pegawai, bulan, tahun, output_path, lo
 
         try:
             jam_data = _ekstrak_jam_masuk_dari_pdf(file_path)
-            # Simpan dengan key original dan key yang disanitasi (lowercase)
             pdf_map[nama_file] = jam_data
             pdf_map[nama_file.lower()] = jam_data
             from utils import sanitize_filename
@@ -307,19 +419,13 @@ def rekap_kehadiran_apel(dir_rekap, excel_pegawai, bulan, tahun, output_path, lo
         except Exception as e:
             log(f"  ⚠ Gagal membaca PDF {nama_file}: {e}")
 
-    # =====================================================
-    # 3.5. Kumpulkan semua tanggal yang ada absensinya
-    # =====================================================
     tanggal_ada_di_pdf = set()
     for jam_data in pdf_map.values():
         tanggal_ada_di_pdf.update(jam_data.keys())
 
-    # =====================================================
-    # 4. Buat Workbook Excel
-    # =====================================================
-    log("  [3/4] Membuat file Excel rekap apel per bidang...")
+    # 4. Buat File Per-Bidang & Workbook Master
+    log("  [3/4] Membuat file Excel rekap apel...")
 
-    # Kelompokkan pegawai per bidang
     pegawai_per_bidang = {}
     for peg in pegawai_list:
         bidang = peg["bidang"]
@@ -329,6 +435,11 @@ def rekap_kehadiran_apel(dir_rekap, excel_pegawai, bulan, tahun, output_path, lo
 
     nama_bulan_text = NAMA_BULAN[bulan_int] if 1 <= bulan_int <= 12 else str(bulan_int)
     output_files = []
+    all_nip_to_tk = {}
+
+    # Workbook Master
+    wb_master = Workbook()
+    wb_master.remove(wb_master.active)  # Hapus sheet default
 
     for bidang in bidang_order:
         from steps.download import stop_event
@@ -342,135 +453,83 @@ def rekap_kehadiran_apel(dir_rekap, excel_pegawai, bulan, tahun, output_path, lo
 
         log(f"    Membuat rekap: {bidang} ({len(daftar_peg)} pegawai)")
 
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Rekap Apel"
+        # --- A. File Per-Bidang ---
+        wb_bidang = Workbook()
+        ws_bidang = wb_bidang.active
+        ws_bidang.title = "Rekap Apel"
+        nip_tk_dict = _tulis_sheet_rekap_apel(
+            ws_bidang, bidang, daftar_peg, tanggal_bulan,
+            pdf_map, tanggal_ada_di_pdf, nama_bulan_text, tahun_int
+        )
+        all_nip_to_tk.update(nip_tk_dict)
 
-        # ── Header Judul (Row 1-4) sesuai template ──
-        ws.cell(row=1, column=1, value="REKAPITULASI APEL").font = FONT_TITLE
-        ws.cell(row=2, column=1, value=f"BIDANG/KPH : {bidang}").font = FONT_TITLE
-        ws.cell(row=3, column=1, value=f"BULAN : {nama_bulan_text} {tahun_int}").font = FONT_TITLE
-        # Row 4 = kosong (space)
-
-        # ── Tabel Header (Row 5) ──
-        header_row = 5
-        kolom_tetap = ["No", "NIP", "Nama", "Jabatan"]
-        # Kolom tanggal: hanya angka tanggal
-        kolom_tanggal = [str(tgl.day) for tgl in tanggal_bulan]
-        headers = kolom_tetap + kolom_tanggal + ["Total TK"]
-
-        for col_idx, header_text in enumerate(headers, 1):
-            cell = ws.cell(row=header_row, column=col_idx, value=header_text)
-            cell.fill = FILL_HEADER
-            cell.font = FONT_HEADER
-            cell.alignment = ALIGN_CENTER
-            cell.border = THIN_BORDER
-
-        # ── Data Rows (mulai dari row 6) ──
-        col_start_tanggal = len(kolom_tetap) + 1
-        col_total_tk = len(headers)
-        data_start_row = header_row + 1
-
-        for row_offset, peg in enumerate(daftar_peg):
-            row_idx = data_start_row + row_offset
-            nama = peg["nama"]
-            nip = peg["nip"]
-            jabatan = peg["jabatan"]
-
-            # Kolom tetap
-            ws.cell(row=row_idx, column=1, value=row_offset + 1).font = FONT_NORMAL
-            ws.cell(row=row_idx, column=1).alignment = ALIGN_CENTER
-            ws.cell(row=row_idx, column=1).border = THIN_BORDER
-
-            ws.cell(row=row_idx, column=2, value=nip).font = FONT_NORMAL
-            ws.cell(row=row_idx, column=2).alignment = ALIGN_LEFT
-            ws.cell(row=row_idx, column=2).border = THIN_BORDER
-
-            ws.cell(row=row_idx, column=3, value=nama).font = FONT_NORMAL
-            ws.cell(row=row_idx, column=3).alignment = ALIGN_LEFT
-            ws.cell(row=row_idx, column=3).border = THIN_BORDER
-
-            ws.cell(row=row_idx, column=4, value=jabatan).font = FONT_NORMAL
-            ws.cell(row=row_idx, column=4).alignment = ALIGN_LEFT
-            ws.cell(row=row_idx, column=4).border = THIN_BORDER
-
-            # Ambil data jam masuk dari PDF (pencocokan nama yang fleksibel)
-            from utils import sanitize_filename
-            jam_data = (
-                pdf_map.get(nama)
-                or pdf_map.get(nama.lower())
-                or pdf_map.get(sanitize_filename(nama).lower(), {})
-            )
-
-            total_tk = 0
-
-            for tgl_idx, tgl in enumerate(tanggal_bulan):
-                col = col_start_tanggal + tgl_idx
-                jam_masuk = jam_data.get(tgl, None)
-
-                is_public_holiday = (tgl not in tanggal_ada_di_pdf)
-                status, is_tk = _status_apel(tgl, jam_masuk, is_public_holiday)
-
-                # WFH dan LIBUR: sel kosong tapi tetap diwarnai
-                if status == "__WFH__":
-                    cell = ws.cell(row=row_idx, column=col, value="")
-                    cell.fill = FILL_WFH
-                    cell.font = FONT_WFH
-                elif status == "__LIBUR__":
-                    cell = ws.cell(row=row_idx, column=col, value="")
-                    cell.fill = FILL_LIBUR
-                    cell.font = FONT_LIBUR
-                elif status == "TK":
-                    cell = ws.cell(row=row_idx, column=col, value="TK")
-                    cell.fill = FILL_TK
-                    cell.font = FONT_TK
-                    total_tk += 1
-                elif status:  # Keterangan (CT, DL, SAKIT, IZIN, TUBEL, dll)
-                    cell = ws.cell(row=row_idx, column=col, value=status)
-                    cell.fill = FILL_KETERANGAN
-                    cell.font = FONT_KETERANGAN
-                else:  # Hadir tepat waktu
-                    cell = ws.cell(row=row_idx, column=col, value="")
-                    cell.font = FONT_NORMAL
-
-                cell.alignment = ALIGN_CENTER
-                cell.border = THIN_BORDER
-
-            # Kolom Total TK
-            cell_total = ws.cell(row=row_idx, column=col_total_tk, value=total_tk)
-            cell_total.font = Font(name="Calibri", size=10, bold=True)
-            cell_total.alignment = ALIGN_CENTER
-            cell_total.border = THIN_BORDER
-            if total_tk > 0:
-                cell_total.fill = FILL_TK
-
-        # ── Atur lebar kolom ──
-        ws.column_dimensions[get_column_letter(1)].width = 5    # No
-        ws.column_dimensions[get_column_letter(2)].width = 22   # NIP
-        ws.column_dimensions[get_column_letter(3)].width = 30   # Nama
-        ws.column_dimensions[get_column_letter(4)].width = 25   # Jabatan
-
-        for tgl_idx in range(len(tanggal_bulan)):
-            col = col_start_tanggal + tgl_idx
-            ws.column_dimensions[get_column_letter(col)].width = 5
-
-        ws.column_dimensions[get_column_letter(col_total_tk)].width = 10
-
-        # Freeze panes: freeze kolom tetap + header judul
-        ws.freeze_panes = f"E{data_start_row}"
-
-        # ── Simpan file Excel ke folder bidang ──
         folder_bidang = os.path.join(dir_rekap, bidang)
         os.makedirs(folder_bidang, exist_ok=True)
-
         from utils import sanitize_filename
         nama_file_output = sanitize_filename(f"Rekap_Apel_{bidang}_{bulan}_{tahun}.xlsx")
         path_output_bidang = os.path.join(folder_bidang, nama_file_output)
-
-        wb.save(path_output_bidang)
-        wb.close()
+        wb_bidang.save(path_output_bidang)
+        wb_bidang.close()
         output_files.append(path_output_bidang)
-        log(f"      ✅ Disimpan: {path_output_bidang}")
 
-    log(f"  [4/4] Selesai! {len(output_files)} file rekap apel disimpan ke folder masing-masing bidang.")
-    log(f"✅ Rekap Kehadiran Apel selesai!")
+        # --- B. Sheet di File Master ---
+        base_sheet_name = re.sub(r'[\\/*?\[\]:]', '', bidang)[:30].strip() or "Bidang"
+        sheet_name = base_sheet_name
+        counter = 1
+        while sheet_name in wb_master.sheetnames:
+            sheet_name = f"{base_sheet_name[:27]}_{counter}"
+            counter += 1
+
+        ws_master = wb_master.create_sheet(title=sheet_name)
+        _tulis_sheet_rekap_apel(
+            ws_master, bidang, daftar_peg, tanggal_bulan,
+            pdf_map, tanggal_ada_di_pdf, nama_bulan_text, tahun_int
+        )
+
+    # Simpan File Master di root dir_rekap (REKAP KEHADIRAN DITANDATANGANI)
+    from utils import sanitize_filename
+    path_master = os.path.join(dir_rekap, sanitize_filename(f"Rekap_Apel_Master_{bulan}_{tahun}.xlsx"))
+    wb_master.save(path_master)
+    wb_master.close()
+    log(f"  ✅ File Master diselamatkan: {path_master}")
+
+    # 5. Auto-fill TMA ke File Ekin & Apel (jika ada)
+    if ekin_apel_excel and os.path.exists(ekin_apel_excel):
+        log("  [4/4] Mengisikan Total TK ke kolom TMA pada file Ekin & Apel...")
+        try:
+            wb_ekin = load_workbook(ekin_apel_excel)
+            ws_ekin = wb_ekin["DISIPLIN"] if "DISIPLIN" in wb_ekin.sheetnames else wb_ekin.active
+
+            # Cari posisi kolom NIP dan TMA
+            headers = {}
+            for col in range(1, ws_ekin.max_column + 1):
+                hv = ws_ekin.cell(row=1, column=col).value
+                if hv:
+                    headers[str(hv).strip().upper()] = col
+
+            col_nip = headers.get("NIP")
+            col_tma = headers.get("TMA")
+
+            if col_nip and col_tma:
+                updated_count = 0
+                for r in range(2, ws_ekin.max_row + 1):
+                    nip_val = ws_ekin.cell(row=r, column=col_nip).value
+                    if nip_val:
+                        nip_clean = str(nip_val).replace(" ", "").strip()
+                        if nip_clean in all_nip_to_tk:
+                            ws_ekin.cell(row=r, column=col_tma).value = all_nip_to_tk[nip_clean]
+                            updated_count += 1
+
+                path_ekin_output = os.path.join(dir_rekap, sanitize_filename(f"Ekin_Apel_Terisi_{bulan}_{tahun}.xlsx"))
+                wb_ekin.save(path_ekin_output)
+                wb_ekin.close()
+                log(f"  ✅ Berhasil update {updated_count} pegawai di file Ekin & Apel → {path_ekin_output}")
+            else:
+                log("  ⚠ Kolom NIP atau TMA tidak ditemukan pada file Ekin & Apel.")
+                wb_ekin.close()
+        except Exception as e:
+            log(f"  ⚠ Gagal mengisi file Ekin & Apel: {e}")
+    else:
+        log("  [4/4] File Ekin & Apel tidak diisi (file tidak ditemukan / tidak dipilih).")
+
+    log(f"✅ Rekap Kehadiran Apel selesai! {len(output_files)} file bidang & 1 file master disimpan.")
