@@ -11,7 +11,26 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        # Stdlib berat yang tidak dipakai
+        'unittest', 'test', 'distutils', 'setuptools', 'pkg_resources',
+        'email', 'http', 'urllib', 'xmlrpc', 'ftplib', 'imaplib',
+        'poplib', 'smtplib', 'telnetlib', 'nntplib', 'ssl',
+        'multiprocessing', 'concurrent', 'asyncio', 'curses',
+        'doctest', 'pdb', 'profile', 'pstats', 'cProfile',
+        'lib2to3', 'tkinter.test', 'idlelib',
+        # Submodul numpy berat yang tidak dipakai
+        'numpy.core._multiarray_tests',
+        'numpy.random._examples',
+        # Submodul pandas yang tidak dipakai di GUI
+        'pandas.tests', 'pandas.io.formats.style',
+        # Modul Pillow yang tidak dipakai
+        'PIL.ImageFilter', 'PIL.ImageDraw2',
+        # Selenium internal yang jarang dipakai
+        'selenium.webdriver.firefox',
+        'selenium.webdriver.safari',
+        'selenium.webdriver.ie',
+    ],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
@@ -24,8 +43,9 @@ exe = EXE(
     name='SIMAK-TPP',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
+    strip=True,
     upx=True,
+    upx_exclude=['vcruntime140.dll', 'msvcp140.dll'],
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -38,7 +58,7 @@ coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
-    strip=False,
+    strip=True,
     upx=True,
     upx_exclude=[],
     name='SIMAK-TPP',
