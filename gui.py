@@ -193,14 +193,13 @@ class App:
 
         # ── Process Steps ──
         self.step_definitions = [
-            ("Download Rekap\nKehadiran",  "⬇"),
-            ("Analisis\nKehadiran",        "📊"),
-            ("Gabung Ekin &\nApel",        "🔗"),
-            ("Generate CSV",              "📄"),
-            ("Mail Merge TPP",            "📨"),
-            ("Merge PDF\nper Jabatan",    "🗂️"),
+            ("Download Rekap\nKehadiran",        "⬇"),
+            ("Rekap Kehadiran\nApel",           "📋"),
+            ("Analisis\nKehadiran",              "📊"),
+            ("Generate CSV",                    "📄"),
+            ("Mail Merge TPP",                  "📨"),
+            ("Merge PDF\nper Jabatan",          "🗂️"),
             ("Pecah & Distribusi\nDokumen TTD", "✂️"),
-            ("Rekap Kehadiran\nApel", "📋"),
         ]
 
         self.step_vars = []
@@ -260,15 +259,14 @@ class App:
             )
             switch.pack(side="right", padx=(0, 5))
 
-        # Map step vars to legacy variable names
+        # Map step vars to variable names
         self.var_download      = self.step_vars[0]
-        self.var_analisis      = self.step_vars[1]
-        self.var_merge         = self.step_vars[2]
+        self.var_rekap_apel    = self.step_vars[1]
+        self.var_analisis      = self.step_vars[2]
         self.var_csv           = self.step_vars[3]
         self.var_mailmerge     = self.step_vars[4]
         self.var_merge_jabatan = self.step_vars[5]
         self.var_split_pdf     = self.step_vars[6]
-        self.var_rekap_apel    = self.step_vars[7]
 
         # ── Footer ──
         ctk.CTkLabel(
@@ -967,7 +965,7 @@ class App:
             if self.var_download.get():
                 if stop_event.is_set():
                     return
-                self.log("── [1/8] Download Rekap Kehadiran ──")
+                self.log("── [1/7] Download Rekap Kehadiran ──")
                 max_workers = self.worker_var.get()
                 download_rekap(excel_pegawai, DIR_REKAP, bulan, tahun, self.log, max_workers)
 
@@ -983,64 +981,71 @@ class App:
                     shutil.rmtree(DIR_REKAP)
                     self.log(f"  🗑 Folder REKAP KEHADIRAN dihapus (menyisakan hasil TTD).")
 
-            # STEP 2 — ANALISIS
+            # STEP 2 — REKAP KEHADIRAN APEL
+            if self.var_rekap_apel.get():
+                if stop_event.is_set():
+                    return
+                self.log("── [2/7] Rekap Kehadiran Apel ──")
+                rekap_kehadiran_apel(DIR_REKAP_DITANDATANGANI, excel_pegawai, bulan, tahun, None, self.log, ekin_apel)
+
+            # STEP 3 — ANALISIS KEHADIRAN
             if self.var_analisis.get():
                 if stop_event.is_set():
                     return
-                self.log("── [2/8] Analisis Kehadiran ──")
+                self.log("── [3/7] Analisis Kehadiran ──")
                 analisis_kehadiran(DIR_REKAP_DITANDATANGANI, excel, output_excel, self.log, json_kalender)
 
-            # STEP 3 — MERGE EKIN APEL
-            if self.var_merge.get():
+            # GABUNG EKIN & APEL (OTOMATIS TANPA TOGGLE)
+            # Selalu dijalankan jika Analisis Kehadiran aktif atau output_excel ada
+            if self.var_analisis.get() or os.path.exists(output_excel):
                 if stop_event.is_set():
                     return
-                self.log("── [3/8] Gabung Ekin & Apel ──")
-                status, pesan = merge_ekin_apel(
-                    ekin_apel,
-                    output_excel,
-                    output_template_ready
-                )
-                self.log(pesan)
+                self.log("  🔗 Menggabungkan Data Ekin & Apel (otomatis)...")
 
-                if not status:
-                    messagebox.showerror("Error", pesan)
-                    return
+                # Gunakan file Ekin_Apel_Terisi jika ada dari Rekap Apel (Step 2), atau ekin_apel asli
+                from utils import sanitize_filename
+                path_ekin_terisi = os.path.join(DIR_REKAP_DITANDATANGANI, sanitize_filename(f"Ekin_Apel_Terisi_{bulan}_{tahun}.xlsx"))
+                file_sumber_ekin = path_ekin_terisi if os.path.exists(path_ekin_terisi) else ekin_apel
+
+                if file_sumber_ekin and os.path.exists(file_sumber_ekin):
+                    status, pesan = merge_ekin_apel(
+                        file_sumber_ekin,
+                        output_excel,
+                        output_template_ready
+                    )
+                    self.log(f"  {pesan}")
+                    if not status:
+                        messagebox.showerror("Error", pesan)
+                        return
 
             # STEP 4 — CSV
             if self.var_csv.get():
                 if stop_event.is_set():
                     return
-                self.log("── [4/8] Generate CSV ──")
+                self.log("── [4/7] Generate CSV ──")
                 excel_sheet_disiplin_ke_csv(output_template_ready, base_dir)
 
             # STEP 5 — MAIL MERGE
             if self.var_mailmerge.get():
                 if stop_event.is_set():
                     return
-                self.log("── [5/8] Mail Merge TPP ──")
+                self.log("── [5/7] Mail Merge TPP ──")
                 process_mail_merge(DIR_REKAP_DITANDATANGANI, DIR_OUTPUT, TEMP_DIR, csv_output, word, self.log)
 
             # STEP 6 — MERGE PDF PER JABATAN
             if self.var_merge_jabatan.get():
                 if stop_event.is_set():
                     return
-                self.log("── [6/8] Merge PDF per Jabatan ──")
+                self.log("── [6/7] Merge PDF per Jabatan ──")
                 merge_pdf_by_jabatan(DIR_OUTPUT, csv_output, bulan, tahun, self.log)
 
             # STEP 7 — PECAH & DISTRIBUSI DOKUMEN TTD
             if self.var_split_pdf.get():
                 if stop_event.is_set():
                     return
-                self.log("── [7/8] Pecah & Distribusi Dokumen TTD ──")
+                self.log("── [7/7] Pecah & Distribusi Dokumen TTD ──")
                 pdf_gabungan = self.entry_pdf_gabungan.get()
                 split_pdf_jabatan(DIR_OUTPUT, csv_output, bulan, tahun, self.log, pdf_gabungan)
-
-            # STEP 8 — REKAP KEHADIRAN APEL
-            if self.var_rekap_apel.get():
-                if stop_event.is_set():
-                    return
-                self.log("── [8/8] Rekap Kehadiran Apel ──")
-                rekap_kehadiran_apel(DIR_REKAP_DITANDATANGANI, excel_pegawai, bulan, tahun, None, self.log, ekin_apel)
 
             # Jika berhasil semua
             if not stop_event.is_set():
