@@ -7,7 +7,7 @@ a = Analysis(
     datas=[
         ('files', 'files'),
     ],
-    hiddenimports=[],
+    hiddenimports=['secrets', 'hmac', '_hashlib', '_blake2'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -16,7 +16,7 @@ a = Analysis(
         'unittest', 'test', 'distutils', 'setuptools', 'pkg_resources',
         'xmlrpc', 'ftplib', 'imaplib',
         'poplib', 'smtplib', 'telnetlib', 'nntplib',
-        'multiprocessing', 'concurrent', 'asyncio', 'curses',
+        'asyncio', 'curses',
         'doctest', 'pdb', 'profile', 'pstats', 'cProfile',
         'lib2to3', 'tkinter.test', 'idlelib',
         # Submodul numpy berat yang tidak dipakai
