@@ -75,97 +75,6 @@ jobs:
         Compress-Archive -Path dist\SIMAK-TPP\* -DestinationPath SIMAK-TPP-Windows-${{ env.VERSION }}.zip
       shell: pwsh
 
-    - name: Upload Windows Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows-build
-        path: SIMAK-TPP-Windows-${{ env.VERSION }}.zip
-        retention-days: 1
-
-  build-macos:
-    runs-on: macos-latest
-    permissions:
-      contents: write
-
-    steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Determine Version
-      shell: bash
-      run: |
-        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-          echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
-        else
-          echo "VERSION=${{ github.ref_name }}-v${{ github.run_number }}" >> $GITHUB_ENV
-        fi
-
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.10"
-
-    - name: Install Dependencies (skip pywin32)
-      run: |
-        python -m pip install --upgrade pip
-        grep -v "pywin32" requirements.txt > requirements-mac.txt
-        pip install --no-cache-dir -r requirements-mac.txt
-
-    - name: Install UPX
-      run: brew install upx
-
-    - name: Build macOS App
-      run: |
-        pyinstaller SIMAK-TPP-mac.spec
-
-    - name: Remove Unnecessary Files from Build
-      run: |
-        find dist/SIMAK-TPP.app -name "*.pyi" -delete
-        find dist/SIMAK-TPP.app -name "*.pyc" -delete
-        find dist/SIMAK-TPP.app -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
-        echo "Cleanup selesai"
-
-    - name: Zip macOS App
-      run: |
-        cd dist
-        zip -r ../SIMAK-TPP-macOS-${{ env.VERSION }}.zip SIMAK-TPP.app
-
-    - name: Upload macOS Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: macos-build
-        path: SIMAK-TPP-macOS-${{ env.VERSION }}.zip
-        retention-days: 1
-
-  create-release:
-    needs: [build-windows, build-macos]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-    - name: Determine Version
-      shell: bash
-      run: |
-        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-          echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
-        else
-          echo "VERSION=${{ github.ref_name }}-v${{ github.run_number }}" >> $GITHUB_ENV
-        fi
-
-    - name: Download Windows Build
-      uses: actions/download-artifact@v4
-      with:
-        name: windows-build
-
-    - name: Download macOS Build
-      uses: actions/download-artifact@v4
-      with:
-        name: macos-build
-
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
@@ -180,20 +89,12 @@ jobs:
           ${{ github.event.head_commit.message }}
 
           ### Cara Install
-          **Windows:**
-          1. Download `SIMAK-TPP-Windows-*.zip`
+          1. Download file ZIP di bawah
           2. Ekstrak ke folder mana saja
           3. Jalankan `SIMAK-TPP.exe`
 
           > ⚠️ Semua file dalam folder ZIP harus tetap berada dalam satu folder yang sama dengan `SIMAK-TPP.exe`.
-
-          **macOS:**
-          1. Download `SIMAK-TPP-macOS-*.zip`
-          2. Ekstrak, lalu drag `SIMAK-TPP.app` ke folder Applications
-          3. Klik kanan → Open (pertama kali, untuk bypass Gatekeeper)
-        files: |
-          SIMAK-TPP-Windows-${{ env.VERSION }}.zip
-          SIMAK-TPP-macOS-${{ env.VERSION }}.zip
+        files: SIMAK-TPP-Windows-${{ env.VERSION }}.zip
         draft: false
         prerelease: false
         make_latest: true

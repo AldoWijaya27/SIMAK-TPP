@@ -16,7 +16,7 @@ a = Analysis(
         'unittest', 'test', 'distutils', 'setuptools', 'pkg_resources',
         'xmlrpc', 'ftplib', 'imaplib',
         'poplib', 'smtplib', 'telnetlib', 'nntplib',
-        'asyncio', 'curses',
+        'curses',
         'doctest', 'pdb', 'profile', 'pstats', 'cProfile',
         'lib2to3', 'tkinter.test', 'idlelib',
         # Submodul numpy berat yang tidak dipakai
@@ -45,7 +45,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=['vcruntime140.dll', 'msvcp140.dll'],
+    upx_exclude=['vcruntime140.dll', 'msvcp140.dll', 'tcl86t.dll', 'tk86t.dll', '_tkinter.pyd', 'python3*.dll'],
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -60,6 +60,6 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=True,
-    upx_exclude=[],
+    upx_exclude=['tcl86t.dll', 'tk86t.dll', '_tkinter.pyd'],
     name='SIMAK-TPP',
 )
