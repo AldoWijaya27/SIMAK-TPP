@@ -952,11 +952,6 @@ class App:
             bulan = self.entry_bulan.get().zfill(2)
             tahun = int(self.entry_tahun.get())
 
-            if not excel or not word:
-                self.root.after(0, lambda: self._set_status("● Template belum dipilih", COLORS["status_error"]))
-                self.root.after(0, lambda: messagebox.showerror("Error", "Template belum dipilih"))
-                return
-
             output_excel = os.path.join(base_dir, "Disiplin_TPP.xlsx")
             output_template_ready = os.path.join(base_dir, "Disiplin_TPP_Lengkap.xlsx")
             csv_output = os.path.join(base_dir, "Disiplin_TPP_Lengkap.csv")
@@ -991,6 +986,10 @@ class App:
             # STEP 3 — ANALISIS KEHADIRAN
             if self.var_analisis.get():
                 if stop_event.is_set():
+                    return
+                if not excel or not os.path.exists(excel):
+                    self.log("❌ Template Excel belum dipilih atau file tidak ditemukan.")
+                    messagebox.showerror("Error", "Template Excel belum dipilih atau file tidak ditemukan.")
                     return
                 self.log("── [3/7] Analisis Kehadiran ──")
                 analisis_kehadiran(DIR_REKAP_DITANDATANGANI, excel, output_excel, self.log, json_kalender)
@@ -1029,6 +1028,10 @@ class App:
             if self.var_mailmerge.get():
                 if stop_event.is_set():
                     return
+                if not word or not os.path.exists(word):
+                    self.log("❌ Template Word TPP tidak ditemukan.")
+                    messagebox.showerror("Error", "Template Word TPP tidak ditemukan.")
+                    return
                 self.log("── [5/7] Mail Merge TPP ──")
                 process_mail_merge(DIR_REKAP_DITANDATANGANI, DIR_OUTPUT, TEMP_DIR, csv_output, word, self.log)
 
@@ -1045,6 +1048,10 @@ class App:
                     return
                 self.log("── [7/7] Pecah & Distribusi Dokumen TTD ──")
                 pdf_gabungan = self.entry_pdf_gabungan.get()
+                if pdf_gabungan and not os.path.exists(pdf_gabungan):
+                    self.log(f"❌ File PDF Gabungan (TTD) yang dipilih tidak ditemukan: {pdf_gabungan}")
+                    messagebox.showerror("Error", f"File PDF Gabungan (TTD) yang dipilih tidak ditemukan: {pdf_gabungan}")
+                    return
                 split_pdf_jabatan(DIR_OUTPUT, csv_output, bulan, tahun, self.log, pdf_gabungan)
 
             # Jika berhasil semua
