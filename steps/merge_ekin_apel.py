@@ -14,16 +14,16 @@ def merge_ekin_apel(file_sumber, file_utama, output_path):
             if col not in df_sumber.columns:
                 raise ValueError(f"Kolom '{col}' tidak ditemukan di file sumber.")
 
-        # Bersihkan NIP
-        df_sumber["NIP"] = (
-            df_sumber["NIP"]
-            .astype(str)
-            .str.replace(" ", "", regex=False)
-            .str.strip()
-        )
-
-        # Buat mapping berdasarkan NIP
-        mapping = df_sumber.set_index("NIP")[["Predikat Kinerja", "TMA", "TMA Lain"]].to_dict("index")
+        # Buat mapping berdasarkan NIP (tahan terhadap NIP ganda atau kosong)
+        mapping = {}
+        for _, row in df_sumber.iterrows():
+            nip_val = str(row["NIP"]).replace(" ", "").strip()
+            if nip_val and nip_val.lower() not in ["nan", "none", "-", "0"]:
+                mapping[nip_val] = {
+                    "Predikat Kinerja": row["Predikat Kinerja"],
+                    "TMA": row["TMA"],
+                    "TMA Lain": row["TMA Lain"]
+                }
 
         # ==========================================================
         # 3️⃣ Load file output pakai openpyxl (bukan pandas!)

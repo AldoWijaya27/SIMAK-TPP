@@ -169,11 +169,15 @@ class App:
         ).pack(side="left", anchor="w")
 
         self.var_master_check = ctk.BooleanVar(value=True)
+        self._master_check_updating = False  # Flag agar master toggle tidak trigger group logic
 
         def _on_master_check_toggle():
             val = self.var_master_check.get()
+            self._master_check_updating = True
             for var in self.step_vars:
                 var.set(val)
+            self._master_check_updating = False
+            self._update_form_visibility()
 
         self.master_checkbox = ctk.CTkCheckBox(
             section_header,
@@ -196,7 +200,6 @@ class App:
             ("Download Rekap\nKehadiran",        "⬇"),
             ("Rekap Kehadiran\nApel",           "📋"),
             ("Analisis\nKehadiran",              "📊"),
-            ("Generate CSV",                    "📄"),
             ("Mail Merge TPP",                  "📨"),
             ("Merge PDF\nper Jabatan",          "🗂️"),
             ("Pecah & Distribusi\nDokumen TTD", "✂️"),
@@ -204,6 +207,20 @@ class App:
 
         self.step_vars = []
         self.step_frames = []
+
+        # Definisi grup eksklusif (harus ada SEBELUM switch dibuat):
+        #   Grup A: Step 1 & 2 (index 0, 1)  — Download + Rekap Apel
+        #   Grup B: Step 3-5   (index 2,3,4) — Analisis → Merge Jabatan
+        #   Grup C: Step 6     (index 5)     — Pecah & Distribusi TTD
+        self._step_groups = {
+            "A": [0, 1],
+            "B": [2, 3, 4],
+            "C": [5],
+        }
+        self._index_to_group = {}
+        for group_name, indices in self._step_groups.items():
+            for idx in indices:
+                self._index_to_group[idx] = group_name
 
         steps_container = ctk.CTkFrame(sidebar, fg_color="transparent")
         steps_container.pack(fill="both", expand=True, padx=10)
@@ -246,10 +263,12 @@ class App:
             )
             name_label.pack(side="left", fill="x", expand=True)
 
-            # Toggle switch
+            # Toggle switch — dengan callback untuk grup eksklusif
+            step_index = i  # capture loop variable
             switch = ctk.CTkSwitch(
                 step_frame, text="",
                 variable=step_var,
+                command=lambda idx=step_index: self._on_step_toggle(idx),
                 width=42, height=22,
                 switch_width=38, switch_height=19,
                 progress_color=COLORS["switch_on"],
@@ -263,10 +282,11 @@ class App:
         self.var_download      = self.step_vars[0]
         self.var_rekap_apel    = self.step_vars[1]
         self.var_analisis      = self.step_vars[2]
-        self.var_csv           = self.step_vars[3]
-        self.var_mailmerge     = self.step_vars[4]
-        self.var_merge_jabatan = self.step_vars[5]
-        self.var_split_pdf     = self.step_vars[6]
+        self.var_mailmerge     = self.step_vars[3]
+        self.var_merge_jabatan = self.step_vars[4]
+        self.var_split_pdf     = self.step_vars[5]
+
+
 
         # ── Footer ──
         ctk.CTkLabel(
@@ -318,20 +338,17 @@ class App:
             text_color=COLORS["text_primary"]
         ).pack(anchor="w", padx=18, pady=(15, 10))
 
-        self.entry_template_excel = self._create_file_input(
-            source_card, "Template Excel", "xlsx"
+        self.entry_template_excel, self._frame_template_excel = self._create_file_input(
+            source_card, "Template Excel", "xlsx", return_container=True
         )
-        self.entry_data_pegawai = self._create_file_input(
-            source_card, "Data Pegawai Excel *", "xlsx"
+        self.entry_data_pegawai, self._frame_data_pegawai = self._create_file_input(
+            source_card, "Data Pegawai Excel *", "xlsx", return_container=True
         )
-        self.entry_ekin_apel = self._create_file_input(
-            source_card, "Data Ekin & Apel (Excel)", "xlsx"
+        self.entry_kalender_json, self._frame_kalender_json = self._create_file_input(
+            source_card, "Kalender Kerja Excel (opsional)", "xlsx", return_container=True
         )
-        self.entry_kalender_json = self._create_file_input(
-            source_card, "Kalender Kerja Excel (opsional)", "xlsx"
-        )
-        self.entry_pdf_gabungan = self._create_file_input(
-            source_card, "File PDF Gabungan (TTD) (opsional)", "pdf"
+        self.entry_pdf_gabungan, self._frame_pdf_gabungan = self._create_file_input(
+            source_card, "File PDF Gabungan (TTD) *", "pdf", return_container=True
         )
 
         # Bottom padding
@@ -357,10 +374,10 @@ class App:
         )
 
         # ── Download Worker Setting ──
-        worker_section = ctk.CTkFrame(output_card, fg_color="transparent")
-        worker_section.pack(fill="x", padx=18, pady=(0, 10))
+        self.worker_section = ctk.CTkFrame(output_card, fg_color="transparent")
+        self.worker_section.pack(fill="x", padx=18, pady=(0, 10))
 
-        worker_header = ctk.CTkFrame(worker_section, fg_color="transparent")
+        worker_header = ctk.CTkFrame(self.worker_section, fg_color="transparent")
         worker_header.pack(fill="x")
 
         ctk.CTkLabel(
@@ -401,7 +418,7 @@ class App:
             )
 
         worker_slider = ctk.CTkSlider(
-            worker_section,
+            self.worker_section,
             from_=1, to=10,
             number_of_steps=9,
             variable=self.worker_var,
@@ -414,7 +431,7 @@ class App:
         )
         worker_slider.pack(fill="x", pady=(6, 2))
 
-        hint_frame = ctk.CTkFrame(worker_section, fg_color="transparent")
+        hint_frame = ctk.CTkFrame(self.worker_section, fg_color="transparent")
         hint_frame.pack(fill="x")
         hint_frame.grid_columnconfigure(0, weight=0)
         hint_frame.grid_columnconfigure(1, weight=4)
@@ -427,7 +444,7 @@ class App:
         ctk.CTkLabel(hint_frame, text="10", font=ctk.CTkFont(size=9), text_color=COLORS["text_secondary"]).grid(row=0, column=4, sticky="e")
 
         ctk.CTkLabel(
-            worker_section,
+            self.worker_section,
             text="⚠ Worker lebih banyak = download lebih cepat, tapi lebih berat di RAM & CPU.",
             font=ctk.CTkFont(size=9),
             text_color=COLORS["text_secondary"],
@@ -602,7 +619,7 @@ class App:
     # ══════════════════════════════════════════════════════════
     # Helper: Create a file input row
     # ══════════════════════════════════════════════════════════
-    def _create_file_input(self, parent, label_text, file_type):
+    def _create_file_input(self, parent, label_text, file_type, return_container=False):
         """Create a labeled file input with a browse button and drag-and-drop."""
         container = ctk.CTkFrame(parent, fg_color="transparent")
         container.pack(fill="x", padx=18, pady=(0, 8))
@@ -710,6 +727,8 @@ class App:
         # Store path_var on the entry for .get() compatibility
         entry._path_var = path_var
 
+        if return_container:
+            return entry, container
         return entry
 
     def _create_folder_input(self, parent, label_text):
@@ -913,6 +932,96 @@ class App:
         self._log_tab_buttons["Error"].configure(text="⊘ Error")
         self._log_tab_buttons["Warning"].configure(text="⚠ Warning")
 
+    def _on_step_toggle(self, toggled_index):
+        """Enforce mutual exclusivity antara 3 grup step.
+        Grup A: Step 1 & 2  (Download + Rekap Apel)
+        Grup B: Step 3-5    (Analisis → Merge Jabatan)
+        Grup C: Step 6      (Pecah & Distribusi TTD)
+        Ketika step di satu grup dinyalakan, semua step di grup lain otomatis mati.
+        """
+        # Safety guard: jangan jalankan jika init belum selesai
+        if not hasattr(self, '_step_groups') or not hasattr(self, '_master_check_updating'):
+            return
+        # Jangan jalankan logika grup saat master checkbox toggle semua sekaligus
+        if self._master_check_updating:
+            return
+
+        is_on = self.step_vars[toggled_index].get()
+        if not is_on:
+            # Jika user mematikan step, tidak perlu matikan grup lain
+            return
+
+        my_group = self._index_to_group.get(toggled_index)
+        if not my_group:
+            return
+
+        # Nyalakan SEMUA step di grup yang sama
+        for idx in self._step_groups[my_group]:
+            self.step_vars[idx].set(True)
+
+        # Matikan semua step di grup lain
+        for group_name, indices in self._step_groups.items():
+            if group_name != my_group:
+                for idx in indices:
+                    self.step_vars[idx].set(False)
+
+        # Update master checkbox: centang hanya jika SEMUA step hidup
+        all_on = all(var.get() for var in self.step_vars)
+        self.var_master_check.set(all_on)
+
+        # Update tampilan form sesuai grup aktif
+        self._update_form_visibility()
+
+    def _update_form_visibility(self):
+        """Show/hide form fields berdasarkan grup step yang aktif.
+        Grup A (Step 1-2): Data Pegawai, Ekin & Apel, Worker Slider
+        Grup B (Step 3-5): Template Excel, Ekin & Apel, Kalender Kerja
+        Grup C (Step 6):   PDF Gabungan
+        Folder Hasil & Periode selalu tampil.
+        """
+        # Safety guard
+        if not hasattr(self, '_frame_template_excel'):
+            return
+
+        # Tentukan grup mana yang aktif berdasarkan step yang hidup
+        active_groups = []
+        for group_name, indices in self._step_groups.items():
+            if any(self.step_vars[idx].get() for idx in indices):
+                active_groups.append(group_name)
+
+        # Jika lebih dari 1 grup aktif (Pilih Semua) atau tidak ada step aktif → tampilkan semua
+        if len(active_groups) != 1:
+            active_group = "ALL"
+        else:
+            active_group = active_groups[0]
+
+        # Mapping: field frame → grup mana saja yang membutuhkannya
+        field_visibility = {
+            self._frame_data_pegawai:    ["A", "ALL"],
+            self._frame_template_excel:  ["B", "ALL"],
+            self._frame_kalender_json:   ["B", "ALL"],
+            self._frame_pdf_gabungan:    ["C", "ALL"],
+        }
+
+        pack_opts = {"fill": "x", "padx": 18, "pady": (0, 8)}
+
+        for frame, groups in field_visibility.items():
+            if active_group in groups:
+                if not frame.winfo_ismapped():
+                    frame.pack(**pack_opts)
+            else:
+                if frame.winfo_ismapped():
+                    frame.pack_forget()
+
+        # Worker slider: hanya tampil untuk Grup A (Download)
+        worker_pack_opts = {"fill": "x", "padx": 18, "pady": (0, 10)}
+        if active_group in ["A", "ALL"]:
+            if not self.worker_section.winfo_ismapped():
+                self.worker_section.pack(**worker_pack_opts)
+        else:
+            if self.worker_section.winfo_ismapped():
+                self.worker_section.pack_forget()
+
     def _set_status(self, text, color):
         """Update the status label in the header."""
         self.status_label.configure(text=text, text_color=color)
@@ -922,15 +1031,38 @@ class App:
     # ══════════════════════════════════════════════════════════
     def jalankan(self):
         try:
-            base_dir = self.entry_folder_utama.get()
-            if not base_dir or not os.path.exists(base_dir):
+            raw_base_dir = self.entry_base_dir.get().strip() if self.entry_base_dir.get() else ""
+            if not raw_base_dir or not os.path.exists(raw_base_dir):
+                self.log("❌ Folder Utama / Folder Hasil belum dipilih atau tidak ditemukan.")
                 self.root.after(0, lambda: self._set_status("● Folder Utama belum dipilih", COLORS["status_error"]))
-                self.root.after(0, lambda: messagebox.showerror("Error", "Folder Utama belum dipilih atau folder tidak ditemukan."))
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Peringatan Input",
+                    "Folder Utama / Folder Hasil belum dipilih atau folder tidak ditemukan!\n\nHarap pilih Folder Hasil pada bagian kanan atas terlebih dahulu."
+                ))
                 return
 
-            base_dir = os.path.abspath(base_dir)
+            base_dir = os.path.abspath(raw_base_dir)
             base_dir = os.path.normpath(base_dir)
             base_dir = base_dir.strip()
+
+            # Validasi minimal 1 step diaktifkan
+            any_step = any([
+                self.var_download.get(),
+                self.var_rekap_apel.get(),
+                self.var_analisis.get(),
+                self.var_mailmerge.get(),
+                self.var_merge_jabatan.get(),
+                self.var_split_pdf.get()
+            ])
+
+            if not any_step:
+                self.log("⚠️ Tidak ada langkah kerja (step) yang diaktifkan.")
+                self.root.after(0, lambda: self._set_status("● Pilih minimal 1 step", COLORS["status_error"]))
+                self.root.after(0, lambda: messagebox.showwarning(
+                    "Peringatan Input",
+                    "Tidak ada langkah kerja yang diaktifkan!\n\nHarap aktifkan minimal 1 saklar step di sebelah kiri sebelum menekan tombol JALANKAN."
+                ))
+                return
 
             # Buat struktur folder
             DIR_REKAP = os.path.join(base_dir, "REKAP KEHADIRAN")
@@ -948,7 +1080,7 @@ class App:
 
             excel = self.entry_template_excel.get()
             word = TEMPLATE_WORD
-            ekin_apel = self.entry_ekin_apel.get()
+            ekin_apel = None
             excel_pegawai = self.entry_data_pegawai.get()
             json_kalender = self.entry_kalender_json.get()
 
@@ -959,15 +1091,20 @@ class App:
             output_template_ready = os.path.join(base_dir, "Disiplin_TPP_Lengkap.xlsx")
             csv_output = os.path.join(base_dir, "Disiplin_TPP_Lengkap.csv")
 
+            # Helper untuk menampilkan error log & messagebox thread-safe
+            def show_err(msg, title="Peringatan Input"):
+                self.log(f"❌ {msg}")
+                self.root.after(0, lambda: self._set_status("● Error terjadi", COLORS["status_error"]))
+                self.root.after(0, lambda: messagebox.showerror(title, msg))
+
             # STEP 1 — DOWNLOAD + TTD OTOMATIS
             if self.var_download.get():
                 if stop_event.is_set():
                     return
                 if not excel_pegawai or not os.path.exists(excel_pegawai):
-                    self.log("❌ File Data Pegawai Excel belum dipilih atau file tidak ditemukan.")
-                    messagebox.showerror("Error", "File Data Pegawai Excel belum dipilih atau file tidak ditemukan.")
+                    show_err("File Data Pegawai Excel belum dipilih atau file tidak ditemukan.")
                     return
-                self.log("── [1/7] Download Rekap Kehadiran ──")
+                self.log("── [1/6] Download Rekap Kehadiran ──")
                 max_workers = self.worker_var.get()
                 download_rekap(excel_pegawai, DIR_REKAP, bulan, tahun, self.log, max_workers)
 
@@ -988,10 +1125,9 @@ class App:
                 if stop_event.is_set():
                     return
                 if not excel_pegawai or not os.path.exists(excel_pegawai):
-                    self.log("❌ File Data Pegawai Excel belum dipilih atau file tidak ditemukan.")
-                    messagebox.showerror("Error", "File Data Pegawai Excel belum dipilih atau file tidak ditemukan.")
+                    show_err("File Data Pegawai Excel belum dipilih atau file tidak ditemukan.")
                     return
-                self.log("── [2/7] Rekap Kehadiran Apel ──")
+                self.log("── [2/6] Rekap Kehadiran Apel ──")
                 rekap_kehadiran_apel(DIR_REKAP_DITANDATANGANI, excel_pegawai, bulan, tahun, None, self.log, ekin_apel)
 
             # STEP 3 — ANALISIS KEHADIRAN
@@ -999,10 +1135,9 @@ class App:
                 if stop_event.is_set():
                     return
                 if not excel or not os.path.exists(excel):
-                    self.log("❌ Template Excel belum dipilih atau file tidak ditemukan.")
-                    messagebox.showerror("Error", "Template Excel belum dipilih atau file tidak ditemukan.")
+                    show_err("Template Excel belum dipilih atau file tidak ditemukan.")
                     return
-                self.log("── [3/7] Analisis Kehadiran ──")
+                self.log("── [3/6] Analisis Kehadiran ──")
                 analisis_kehadiran(DIR_REKAP_DITANDATANGANI, excel, output_excel, self.log, json_kalender)
 
             # GABUNG EKIN & APEL (OTOMATIS TANPA TOGGLE)
@@ -1012,61 +1147,145 @@ class App:
                     return
                 self.log("  🔗 Menggabungkan Data Ekin & Apel (otomatis)...")
 
-                # Gunakan file Ekin_Apel_Terisi jika ada dari Rekap Apel (Step 2), atau ekin_apel asli
                 from utils import sanitize_filename
                 path_ekin_terisi = os.path.join(DIR_REKAP_DITANDATANGANI, sanitize_filename(f"Ekin_Apel_Terisi_{bulan}_{tahun}.xlsx"))
-                file_sumber_ekin = path_ekin_terisi if os.path.exists(path_ekin_terisi) else ekin_apel
 
-                if file_sumber_ekin and os.path.exists(file_sumber_ekin):
+                if not os.path.exists(path_ekin_terisi) and excel_pegawai and os.path.exists(excel_pegawai):
+                    try:
+                        from steps.rekap_apel import _baca_data_pegawai
+                        pegawai_list, _ = _baca_data_pegawai(excel_pegawai, self.log)
+                        from openpyxl import Workbook
+                        from openpyxl.styles import Font, Alignment, Border, Side
+
+                        wb_new = Workbook()
+                        ws_new = wb_new.active
+                        ws_new.title = "DISIPLIN"
+
+                        headers_template = ["No.", "Nama Pegawai", "NIP", "Predikat Kinerja", "TMA", "TMA Lain"]
+                        ws_new.append(headers_template)
+
+                        thin_border = Border(
+                            left=Side(style='thin', color='000000'),
+                            right=Side(style='thin', color='000000'),
+                            top=Side(style='thin', color='000000'),
+                            bottom=Side(style='thin', color='000000')
+                        )
+
+                        for col_idx in range(1, 7):
+                            cell = ws_new.cell(row=1, column=col_idx)
+                            cell.font = Font(name="Calibri", size=11, bold=True)
+                            cell.alignment = Alignment(horizontal="center", vertical="center")
+                            cell.border = thin_border
+
+                        seen_nips = set()
+                        no_counter = 1
+                        for p in pegawai_list:
+                            nip_raw = str(p.get("nip", "")).strip()
+                            nip_clean = nip_raw.replace(" ", "").strip()
+                            if not nip_clean or nip_clean.lower() in ["nan", "none", "-", "0"]:
+                                continue
+                            if nip_clean in seen_nips:
+                                continue
+                            seen_nips.add(nip_clean)
+                            nama_val = p.get("nama") or p.get("name") or ""
+                            ws_new.append([no_counter, nama_val, nip_raw, "Baik/Sangat Baik", 0, 0])
+
+                            row_idx = ws_new.max_row
+                            for col_idx in range(1, 7):
+                                c = ws_new.cell(row=row_idx, column=col_idx)
+                                c.font = Font(name="Calibri", size=11)
+                                c.border = thin_border
+                                if col_idx in [1, 5, 6]:
+                                    c.alignment = Alignment(horizontal="center", vertical="center")
+                                else:
+                                    c.alignment = Alignment(horizontal="left", vertical="center")
+                            no_counter += 1
+
+                        for col in ws_new.columns:
+                            max_len = 0
+                            col_letter = col[0].column_letter
+                            for cell in col:
+                                val_str = str(cell.value or "")
+                                if len(val_str) > max_len:
+                                    max_len = len(val_str)
+                            ws_new.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+                        wb_new.save(path_ekin_terisi)
+                        wb_new.close()
+                    except Exception:
+                        pass
+
+                if os.path.exists(path_ekin_terisi):
                     status, pesan = merge_ekin_apel(
-                        file_sumber_ekin,
+                        path_ekin_terisi,
                         output_excel,
                         output_template_ready
                     )
                     self.log(f"  {pesan}")
                     if not status:
-                        messagebox.showerror("Error", pesan)
+                        show_err(pesan, title="Error Gabung Ekin & Apel")
                         return
+                else:
+                    import shutil
+                    shutil.copy(output_excel, output_template_ready)
 
-            # STEP 4 — CSV
-            if self.var_csv.get():
-                if stop_event.is_set():
-                    return
-                if not os.path.exists(output_template_ready):
-                    self.log("❌ File Disiplin_TPP_Lengkap.xlsx tidak ditemukan. Jalankan step sebelumnya terlebih dahulu.")
-                    messagebox.showerror("Error", "File Disiplin_TPP_Lengkap.xlsx tidak ditemukan. Jalankan step sebelumnya terlebih dahulu.")
-                    return
-                self.log("── [4/7] Generate CSV ──")
-                excel_sheet_disiplin_ke_csv(output_template_ready, base_dir)
-
-            # STEP 5 — MAIL MERGE
+            # STEP 4 — MAIL MERGE TPP (Termasuk Generate CSV Otomatis)
             if self.var_mailmerge.get():
                 if stop_event.is_set():
                     return
                 if not word or not os.path.exists(word):
-                    self.log("❌ Template Word TPP tidak ditemukan.")
-                    messagebox.showerror("Error", "Template Word TPP tidak ditemukan.")
+                    show_err("Template Word TPP tidak ditemukan.")
                     return
-                self.log("── [5/7] Mail Merge TPP ──")
+                if not os.path.exists(output_template_ready):
+                    show_err("File Disiplin_TPP_Lengkap.xlsx tidak ditemukan di Folder Hasil. Jalankan step Analisis Kehadiran (Step 3) terlebih dahulu.", title="Prasyarat Belum Ada")
+                    return
+
+                # Otomatis Generate CSV dari Disiplin_TPP_Lengkap.xlsx
+                self.log("  📄 Generating CSV (otomatis)...")
+                excel_sheet_disiplin_ke_csv(output_template_ready, base_dir)
+
+                self.log("── [4/6] Mail Merge TPP ──")
                 process_mail_merge(DIR_REKAP_DITANDATANGANI, DIR_OUTPUT, TEMP_DIR, csv_output, word, self.log)
 
-            # STEP 6 — MERGE PDF PER JABATAN
+            # STEP 5 — MERGE PDF PER JABATAN
             if self.var_merge_jabatan.get():
                 if stop_event.is_set():
                     return
-                self.log("── [6/7] Merge PDF per Jabatan ──")
+                if not os.path.exists(csv_output):
+                    if os.path.exists(output_template_ready):
+                        self.log("  📄 Generating CSV (otomatis)...")
+                        excel_sheet_disiplin_ke_csv(output_template_ready, base_dir)
+                    else:
+                        show_err("File CSV (Disiplin_TPP_Lengkap.csv) / Disiplin_TPP_Lengkap.xlsx tidak ditemukan. Jalankan step sebelumnya terlebih dahulu.", title="Prasyarat Belum Ada")
+                        return
+                self.log("── [5/6] Merge PDF per Jabatan ──")
                 merge_pdf_by_jabatan(DIR_OUTPUT, csv_output, bulan, tahun, self.log)
 
-            # STEP 7 — PECAH & DISTRIBUSI DOKUMEN TTD
+            # STEP 6 — PECAH & DISTRIBUSI DOKUMEN TTD
             if self.var_split_pdf.get():
                 if stop_event.is_set():
                     return
-                self.log("── [7/7] Pecah & Distribusi Dokumen TTD ──")
-                pdf_gabungan = self.entry_pdf_gabungan.get()
-                if pdf_gabungan and not os.path.exists(pdf_gabungan):
-                    self.log(f"❌ File PDF Gabungan (TTD) yang dipilih tidak ditemukan: {pdf_gabungan}")
-                    messagebox.showerror("Error", f"File PDF Gabungan (TTD) yang dipilih tidak ditemukan: {pdf_gabungan}")
+                
+                pdf_gabungan = self.entry_pdf_gabungan.get().strip()
+                
+                # 1. Wajibkan memasukkan File PDF Gabungan (TTD) hasil scan fisik
+                if not pdf_gabungan or not os.path.exists(pdf_gabungan):
+                    if not pdf_gabungan:
+                        show_err("File PDF Gabungan (TTD) belum dipilih!\n\nHarap masukkan file PDF Gabungan (TTD) hasil scan fisik pada kolom di layar sebelum menjalankan step ini.")
+                    else:
+                        show_err(f"File PDF Gabungan (TTD) yang dipilih tidak ditemukan:\n{pdf_gabungan}")
                     return
+
+                # 2. Cek ketersediaan file CSV pendukung data pegawai
+                if not os.path.exists(csv_output):
+                    if os.path.exists(output_template_ready):
+                        self.log("  📄 Generating CSV (otomatis)...")
+                        excel_sheet_disiplin_ke_csv(output_template_ready, base_dir)
+                    else:
+                        show_err("File CSV (Disiplin_TPP_Lengkap.csv) tidak ditemukan di Folder Hasil.\n\nFile CSV ini diperlukan untuk memetakan halaman PDF ke masing-masing pegawai. Jalankan Step 3 & 4 terlebih dahulu.", title="Prasyarat Belum Ada")
+                        return
+
+                self.log("── [6/6] Pecah & Distribusi Dokumen TTD ──")
                 split_pdf_jabatan(DIR_OUTPUT, csv_output, bulan, tahun, self.log, pdf_gabungan)
 
             # Jika berhasil semua

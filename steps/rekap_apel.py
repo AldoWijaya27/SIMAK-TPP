@@ -437,10 +437,6 @@ def rekap_kehadiran_apel(dir_rekap, excel_pegawai, bulan, tahun, output_path, lo
     output_files = []
     all_nip_to_tk = {}
 
-    # Workbook Master
-    wb_master = Workbook()
-    wb_master.remove(wb_master.active)  # Hapus sheet default
-
     for bidang in bidang_order:
         from steps.download import stop_event
         if stop_event.is_set():
@@ -453,7 +449,7 @@ def rekap_kehadiran_apel(dir_rekap, excel_pegawai, bulan, tahun, output_path, lo
 
         log(f"    Membuat rekap: {bidang} ({len(daftar_peg)} pegawai)")
 
-        # --- A. File Per-Bidang ---
+        # --- File Per-Bidang ---
         wb_bidang = Workbook()
         ws_bidang = wb_bidang.active
         ws_bidang.title = "Rekap Apel"
@@ -472,28 +468,8 @@ def rekap_kehadiran_apel(dir_rekap, excel_pegawai, bulan, tahun, output_path, lo
         wb_bidang.close()
         output_files.append(path_output_bidang)
 
-        # --- B. Sheet di File Master ---
-        base_sheet_name = re.sub(r'[\\/*?\[\]:]', '', bidang)[:30].strip() or "Bidang"
-        sheet_name = base_sheet_name
-        counter = 1
-        while sheet_name in wb_master.sheetnames:
-            sheet_name = f"{base_sheet_name[:27]}_{counter}"
-            counter += 1
-
-        ws_master = wb_master.create_sheet(title=sheet_name)
-        _tulis_sheet_rekap_apel(
-            ws_master, bidang, daftar_peg, tanggal_bulan,
-            pdf_map, tanggal_ada_di_pdf, nama_bulan_text, tahun_int
-        )
-
-    # Simpan File Master di root dir_rekap (REKAP KEHADIRAN DITANDATANGANI)
-    from utils import sanitize_filename
-    path_master = os.path.join(dir_rekap, sanitize_filename(f"Rekap_Apel_Master_{bulan}_{tahun}.xlsx"))
-    wb_master.save(path_master)
-    wb_master.close()
-    log(f"  ✅ File Master diselamatkan: {path_master}")
-
-    # 5. Auto-fill TMA ke File Ekin & Apel (jika ada)
+    # 5. Auto-fill TMA ke File Ekin & Apel
+    path_ekin_output = os.path.join(dir_rekap, sanitize_filename(f"Ekin_Apel_Terisi_{bulan}_{tahun}.xlsx"))
     if ekin_apel_excel and os.path.exists(ekin_apel_excel):
         log("  [4/4] Mengisikan Total TK ke kolom TMA pada file Ekin & Apel...")
         try:
@@ -520,7 +496,6 @@ def rekap_kehadiran_apel(dir_rekap, excel_pegawai, bulan, tahun, output_path, lo
                             ws_ekin.cell(row=r, column=col_tma).value = all_nip_to_tk[nip_clean]
                             updated_count += 1
 
-                path_ekin_output = os.path.join(dir_rekap, sanitize_filename(f"Ekin_Apel_Terisi_{bulan}_{tahun}.xlsx"))
                 wb_ekin.save(path_ekin_output)
                 wb_ekin.close()
                 log(f"  ✅ Berhasil update {updated_count} pegawai di file Ekin & Apel → {path_ekin_output}")
@@ -530,6 +505,79 @@ def rekap_kehadiran_apel(dir_rekap, excel_pegawai, bulan, tahun, output_path, lo
         except Exception as e:
             log(f"  ⚠ Gagal mengisi file Ekin & Apel: {e}")
     else:
-        log("  [4/4] File Ekin & Apel tidak diisi (file tidak ditemukan / tidak dipilih).")
+        log("  [4/4] Membuat file Ekin_Apel_Terisi otomatis sesuai format template...")
+        try:
+            wb_new = Workbook()
+            ws_new = wb_new.active
+            ws_new.title = "DISIPLIN"
 
-    log(f"✅ Rekap Kehadiran Apel selesai! {len(output_files)} file bidang & 1 file master disimpan.")
+            # Headers persis template Gambar 2
+            headers_template = ["No.", "Nama Pegawai", "NIP", "Predikat Kinerja", "TMA", "TMA Lain"]
+            ws_new.append(headers_template)
+
+            thin_border = Border(
+                left=Side(style='thin', color='000000'),
+                right=Side(style='thin', color='000000'),
+                top=Side(style='thin', color='000000'),
+                bottom=Side(style='thin', color='000000')
+            )
+
+            # Style Header Row 1
+            for col_idx in range(1, 7):
+                cell = ws_new.cell(row=1, column=col_idx)
+                cell.font = Font(name="Calibri", size=11, bold=True)
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.border = thin_border
+
+            seen_nips = set()
+            no_counter = 1
+            for p in pegawai_list:
+                nip_raw = str(p.get("nip", "")).strip()
+                nip_clean = nip_raw.replace(" ", "").strip()
+                if not nip_clean or nip_clean.lower() in ["nan", "none", "-", "0"]:
+                    continue
+                if nip_clean in seen_nips:
+                    continue
+                seen_nips.add(nip_clean)
+
+                nama_val = p.get("nama") or p.get("name") or ""
+                tk_count = all_nip_to_tk.get(nip_clean, 0)
+
+                row_data = [
+                    no_counter,
+                    nama_val,
+                    nip_raw,
+                    "Baik/Sangat Baik",
+                    tk_count,
+                    0
+                ]
+                ws_new.append(row_data)
+
+                row_idx = ws_new.max_row
+                for col_idx in range(1, 7):
+                    c = ws_new.cell(row=row_idx, column=col_idx)
+                    c.font = Font(name="Calibri", size=11)
+                    c.border = thin_border
+                    if col_idx in [1, 5, 6]:
+                        c.alignment = Alignment(horizontal="center", vertical="center")
+                    else:
+                        c.alignment = Alignment(horizontal="left", vertical="center")
+
+                no_counter += 1
+
+            for col in ws_new.columns:
+                max_len = 0
+                col_letter = col[0].column_letter
+                for cell in col:
+                    val_str = str(cell.value or "")
+                    if len(val_str) > max_len:
+                        max_len = len(val_str)
+                ws_new.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+            wb_new.save(path_ekin_output)
+            wb_new.close()
+            log(f"  ✅ File Ekin & Apel Terisi otomatis dibuat ({no_counter - 1} pegawai) → {path_ekin_output}")
+        except Exception as e:
+            log(f"  ⚠ Gagal membuat file Ekin & Apel Terisi otomatis: {e}")
+
+    log(f"✅ Rekap Kehadiran Apel selesai! {len(output_files)} file bidang disimpan.")
