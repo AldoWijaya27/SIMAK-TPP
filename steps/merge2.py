@@ -37,7 +37,15 @@ def _run_windows_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_
     pythoncom.CoInitialize()
 
     try:
-        word = win32.Dispatch("Word.Application")
+        try:
+            word = win32.Dispatch("Word.Application")
+        except Exception:
+            try:
+                # Coba gunakan WPS Office jika Microsoft Word tidak ada
+                word = win32.Dispatch("KWps.Application")
+            except Exception:
+                raise Exception("Aplikasi Microsoft Word atau WPS Office tidak ditemukan atau belum disetting default. Fitur Mail Merge ini wajib membutuhkan MS Word/WPS Office.")
+        
         word.Visible = False
         word.DisplayAlerts = 0
 

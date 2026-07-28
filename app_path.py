@@ -4,6 +4,8 @@ import sys
 def base_dir():
     # saat jadi exe
     if getattr(sys, 'frozen', False):
+        if hasattr(sys, '_MEIPASS'):
+            return sys._MEIPASS
         return os.path.dirname(sys.executable)
 
     # saat python biasa
