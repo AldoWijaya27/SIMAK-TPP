@@ -117,7 +117,10 @@ def split_pdf_jabatan(dir_output, csv_file, bulan, tahun, log, pdf_gabungan_path
                     
                     # Hapus file PDF aslinya karena diminta replace dengan nama baru
                     if os.path.exists(pdf_asli_path) and pdf_asli_path != path_simpan:
-                        os.remove(pdf_asli_path)
+                        try:
+                            os.remove(pdf_asli_path)
+                        except OSError as e:
+                            log(f"    ⚠ Gagal menghapus file lama '{pdf_asli_path}': {e}")
                         
                     log(f"    ✔ {nama_raw} ({pages_needed} hlmn) -> {nama_file_baru} (File asli diganti)")
                 except Exception as e:

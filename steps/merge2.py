@@ -252,7 +252,10 @@ def _run_macos_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_wo
         # 2. Konversi docx sementara menjadi PDF via LibreOffice
         temp_pdf = os.path.abspath(os.path.join(TEMP_DIR, f"{nama}.pdf"))
         if os.path.exists(temp_pdf):
-            os.remove(temp_pdf)
+            try:
+                os.remove(temp_pdf)
+            except OSError:
+                pass
 
         import subprocess
         cmd = [
@@ -270,11 +273,17 @@ def _run_macos_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_wo
         except Exception as e:
             log(f"    ❌ Gagal konversi PDF via LibreOffice untuk {nama}: {e}")
             if os.path.exists(temp_docx):
-                os.remove(temp_docx)
+                try:
+                    os.remove(temp_docx)
+                except OSError:
+                    pass
             continue
 
         if os.path.exists(temp_docx):
-            os.remove(temp_docx)
+            try:
+                os.remove(temp_docx)
+            except OSError:
+                pass
 
         # 3. Cari file rekap PDF
         rekap = find_rekap_pdf(DIR_REKAP, bidang, nama)
@@ -291,7 +300,10 @@ def _run_macos_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_wo
             log(f"    ❌ Gagal menggabungkan PDF untuk {nama}: {e}")
         finally:
             if os.path.exists(temp_pdf):
-                os.remove(temp_pdf)
+                try:
+                    os.remove(temp_pdf)
+                except OSError:
+                    pass
 
     log("[MACOS] Semua proses mail merge selesai.")
 
