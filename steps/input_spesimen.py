@@ -6,6 +6,12 @@ def input_spesimen(dir_rekap, dir_rekap_tandatangan, log):
 
     # arahkan ke folder files menggunakan get_file untuk mendukung mode frozen .exe
     TTD_IMAGE = get_file("files", "spesimen-compressed.png")
+    if not os.path.exists(TTD_IMAGE):
+        TTD_IMAGE = get_file("files", "spesimen.png")
+
+    if not os.path.exists(TTD_IMAGE):
+        log(f"❌ File gambar spesimen tanda tangan tidak ditemukan di folder 'files'. Pastikan 'files/spesimen-compressed.png' tersedia.")
+        return
 
     os.makedirs(dir_rekap_tandatangan, exist_ok=True)
 
@@ -37,8 +43,14 @@ def input_spesimen(dir_rekap, dir_rekap_tandatangan, log):
 
             doc = fitz.open(input_path)
 
+            keywords = ["KEPALA DINAS KEHUTANAN", "KEPALA DINAS", "PLT. KEPALA DINAS", "PLH. KEPALA DINAS"]
+
             for page in doc:
-                areas = page.search_for("KEPALA DINAS KEHUTANAN")
+                areas = []
+                for kw in keywords:
+                    areas = page.search_for(kw)
+                    if areas:
+                        break
 
                 if not areas:
                     continue
