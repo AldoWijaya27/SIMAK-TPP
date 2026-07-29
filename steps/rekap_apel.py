@@ -221,8 +221,8 @@ def _status_apel(tanggal_obj, jam_masuk_time, is_public_holiday=False):
             # CT dan DL -> tampilkan teks, tidak dihitung TK
             return jam_masuk_time, False
         elif jam_masuk_time is None:
-            # Tidak ada absensi -> TK
-            return "TK", True
+            # Jam masuk kosong / tanpa keterangan -> sel kosong, tidak dihitung TK (dianggap masuk/hadir)
+            return "", False
         elif jam_masuk_time <= JAM_BATAS_APEL:
             # Hadir tepat waktu
             return "", False
