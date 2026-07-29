@@ -48,6 +48,12 @@ jobs:
         pyinstaller SIMAK-TPP.spec
       shell: cmd
 
+    - name: Copy files folder to dist
+      run: |
+        if (Test-Path "dist\SIMAK-TPP\files") { Remove-Item -Recurse -Force "dist\SIMAK-TPP\files" }
+        Copy-Item -Path "files" -Destination "dist\SIMAK-TPP\files" -Recurse
+      shell: pwsh
+
     - name: Zip Build Output
       run: |
         Compress-Archive -Path dist\SIMAK-TPP\* -DestinationPath SIMAK-TPP-Windows-${{ env.VERSION }}.zip
