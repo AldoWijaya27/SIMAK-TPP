@@ -1116,9 +1116,27 @@ class App:
 
                 # Hapus folder REKAP KEHADIRAN (asli) karena sudah ada versi TTD
                 import shutil
+                import stat
+                import time
+
+                def _remove_readonly(func, path, exc_info):
+                    try:
+                        os.chmod(path, stat.S_IWRITE)
+                        func(path)
+                    except Exception:
+                        pass
+
                 if os.path.exists(DIR_REKAP):
-                    shutil.rmtree(DIR_REKAP)
-                    self.log(f"  🗑 Folder REKAP KEHADIRAN dihapus (menyisakan hasil TTD).")
+                    try:
+                        shutil.rmtree(DIR_REKAP, onerror=_remove_readonly)
+                        self.log(f"  🗑 Folder REKAP KEHADIRAN dihapus (menyisakan hasil TTD).")
+                    except Exception:
+                        time.sleep(0.5)
+                        try:
+                            shutil.rmtree(DIR_REKAP, ignore_errors=True)
+                            self.log(f"  🗑 Folder REKAP KEHADIRAN dihapus (menyisakan hasil TTD).")
+                        except Exception:
+                            self.log(f"  ⚠️ Folder REKAP KEHADIRAN mentah belum dapat dihapus penuh oleh Windows/OneDrive, namun proses tetap dilanjutkan.")
 
             # STEP 2 — REKAP KEHADIRAN APEL
             if self.var_rekap_apel.get():
