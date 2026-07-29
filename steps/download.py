@@ -115,6 +115,8 @@ def get_driver():
         options.add_argument("--headless=new") # Jalan di background
         options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--remote-allow-origins=*")
         options.add_argument("--window-size=1920,1080")
         
         # Evasion to prevent bot detection
@@ -230,6 +232,18 @@ def process_pegawai(obj, base_url, dir_rekap, log, progress_info=None):
 
         return True
     except Exception as e:
+        # Bersihkan driver lokal yang crash/detached agar tidak dipakai ulang
+        if hasattr(thread_local, "driver"):
+            dead_driver = thread_local.driver
+            delattr(thread_local, "driver")
+            with drivers_lock:
+                if dead_driver in drivers:
+                    drivers.remove(dead_driver)
+            try:
+                dead_driver.quit()
+            except Exception:
+                pass
+
         if stop_event.is_set():
             # Jika dihentikan oleh user, abaikan log error Selenium agar tidak membingungkan
             return False
