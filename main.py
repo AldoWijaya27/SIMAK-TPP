@@ -12,15 +12,18 @@ import customtkinter as ctk
 from gui import App
 
 def main():
-    # First create the root
-    root = ctk.CTk(className="SIMAK-TPP")
-
-    # Try to inject TkinterDnD for drag-and-drop support
+    # Coba gunakan TkinterDnD wrapper untuk dukungan penuh drag and drop di OS
     try:
         from tkinterdnd2 import TkinterDnD
-        TkinterDnD._require(root)
+        class TkinterDnD_CTk(ctk.CTk, TkinterDnD.DnDWrapper):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.TkdndVersion = TkinterDnD._require(self)
+        
+        root = TkinterDnD_CTk(className="SIMAK-TPP")
     except Exception as e:
         print(f"TkinterDnD failed to load, drag and drop disabled: {e}")
+        root = ctk.CTk(className="SIMAK-TPP")
 
     App(root)
     root.mainloop()

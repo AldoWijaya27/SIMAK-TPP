@@ -96,6 +96,7 @@ def _baca_data_pegawai(excel_pegawai, log):
 
     pegawai_list = []
     bidang_order = []
+    seen_names = set()
 
     for row in ws.iter_rows(min_row=2, values_only=True):
         if all(cell is None for cell in row):
@@ -104,6 +105,12 @@ def _baca_data_pegawai(excel_pegawai, log):
         nama = str(row[col_nama]).strip() if row[col_nama] else ""
         if not nama:
             continue
+
+        nama_lower = nama.lower()
+        if nama_lower in seen_names:
+            log(f"  ⚠ Peringatan: Nama ganda dilewati -> {nama}")
+            continue
+        seen_names.add(nama_lower)
 
         nip = str(row[col_nip]).strip() if col_nip is not None and row[col_nip] else ""
         jabatan = str(row[col_jabatan]).strip() if col_jabatan is not None and row[col_jabatan] else ""
