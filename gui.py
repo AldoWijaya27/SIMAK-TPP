@@ -1115,20 +1115,28 @@ class App:
                 input_spesimen(DIR_REKAP, DIR_REKAP_DITANDATANGANI, self.log)
 
                 # Hapus folder REKAP KEHADIRAN (asli) karena sudah ada versi TTD
-                import shutil, stat
-                def remove_readonly(func, path, exc_info):
+                import shutil
+                import stat
+                import time
+
+                def _remove_readonly(func, path, exc_info):
                     try:
                         os.chmod(path, stat.S_IWRITE)
                         func(path)
-                    except Exception as e:
-                        pass # Abaikan jika tetap tidak bisa dihapus
-                
+                    except Exception:
+                        pass
+
                 if os.path.exists(DIR_REKAP):
                     try:
-                        shutil.rmtree(DIR_REKAP, onerror=remove_readonly)
+                        shutil.rmtree(DIR_REKAP, onerror=_remove_readonly)
                         self.log(f"  🗑 Folder REKAP KEHADIRAN dihapus (menyisakan hasil TTD).")
-                    except Exception as e:
-                        self.log(f"  ⚠ Gagal menghapus folder REKAP KEHADIRAN: {e}")
+                    except Exception:
+                        time.sleep(0.5)
+                        try:
+                            shutil.rmtree(DIR_REKAP, ignore_errors=True)
+                            self.log(f"  🗑 Folder REKAP KEHADIRAN dihapus (menyisakan hasil TTD).")
+                        except Exception:
+                            self.log(f"  ⚠️ Folder REKAP KEHADIRAN mentah belum dapat dihapus penuh oleh Windows/OneDrive, namun proses tetap dilanjutkan.")
 
             # STEP 2 — REKAP KEHADIRAN APEL
             if self.var_rekap_apel.get():
