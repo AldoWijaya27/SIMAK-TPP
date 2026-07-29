@@ -211,7 +211,30 @@ def analisis_kehadiran(dir_rekap, template_excel, output_excel, log, json_kalend
     shutil.copy(template_excel, output_excel)
 
     wb = load_workbook(template_excel, keep_links=True)
-    ws = wb["DISIPLIN"]
+
+    # Cari sheet "DISIPLIN" secara case-insensitive
+    ws = None
+    for sheet_name in wb.sheetnames:
+        if sheet_name.strip().upper() == "DISIPLIN":
+            ws = wb[sheet_name]
+            break
+
+    # Fallback: jika hanya ada 1 sheet, gunakan sheet itu (apapun namanya)
+    if ws is None:
+        if len(wb.sheetnames) == 1:
+            ws = wb[wb.sheetnames[0]]
+            log(f"  ⚠ Sheet '{wb.sheetnames[0]}' ditemukan, otomatis digunakan sebagai sheet DISIPLIN.")
+        else:
+            sheet_list = ", ".join(wb.sheetnames) or "(tidak ada sheet)"
+            raise ValueError(
+                f"Sheet 'DISIPLIN' tidak ditemukan di file template Excel.\n"
+                f"Sheet yang tersedia: {sheet_list}\n"
+                f"Silakan rename salah satu sheet menjadi 'DISIPLIN', atau gunakan template Excel yang benar."
+            )
+
+    # Auto-rename sheet ke DISIPLIN jika namanya berbeda
+    if ws.title.strip().upper() != "DISIPLIN":
+        ws.title = "DISIPLIN"
 
     kolom = {}
     for col in range(1, ws.max_column+1):
