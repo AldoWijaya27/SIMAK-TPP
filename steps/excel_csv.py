@@ -192,6 +192,20 @@ def format_rupiah(val):
         return str(val)
 
 
+def format_persen(val):
+    if val is None or pd.isna(val) or str(val).strip() == "":
+        return "0,00%"
+    try:
+        s = str(val).strip().replace("%", "")
+        import re
+        s = re.sub(r"(?i)rp\.?\s*", "", s)
+        f = float(s)
+        formatted = f"{f:.2f}".replace(".", ",")
+        return f"{formatted}%"
+    except (ValueError, TypeError):
+        return str(val)
+
+
 def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
     file_excel = os.path.abspath(file_excel)
     output_folder = os.path.abspath(output_folder)
@@ -212,7 +226,7 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
     # Baca sheet "DISIPLIN" dari excel dan ekspor ke CSV
     df = pd.read_excel(file_excel, sheet_name=sheet_name)
 
-    # Format kolom nominal rupiah dengan pemisah titik ribuan (misal 9.435.000)
+    # Format kolom nominal rupiah dengan pemisah titik ribuan (misal 4.949.000)
     currency_cols = [
         "TPP Asli", "jumlah TP", "Tambahan 20%", "TPP Kotor",
         "PPh21", "BPJS", "jumlah bersih", "zakat", "TPP bersih",
@@ -222,32 +236,15 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
         if col in df.columns:
             df[col] = df[col].apply(format_rupiah)
 
-    # Format persentase persis sesuai tampilan tabel perhitungan TPP (misal 060%, 040%, 000%, 100%)
-    def format_pct_3digit(val):
-        if val is None or pd.isna(val) or str(val).strip() == "":
-            return "000%"
-        try:
-            n = int(round(float(val)))
-            return f"{n:03d}%"
-        except (ValueError, TypeError):
-            return str(val)
-
-    def format_pct_normal(val):
-        if val is None or pd.isna(val) or str(val).strip() == "":
-            return "100%"
-        try:
-            n = int(round(float(val)))
-            return f"{n}%"
-        except (ValueError, TypeError):
-            return str(val)
-
-    if "Skor Kinerja (%)" in df.columns:
-        df["Skor Kinerja (%)"] = df["Skor Kinerja (%)"].apply(format_pct_3digit)
-    if "Skor Kehadiran (%)" in df.columns:
-        df["Skor Kehadiran (%)"] = df["Skor Kehadiran (%)"].apply(format_pct_3digit)
-    if "TMK Persen" in df.columns:
-        df["TMK Persen"] = df["TMK Persen"].apply(format_pct_3digit)
-    if "Persentase Total" in df.columns:
-        df["Persentase Total"] = df["Persentase Total"].apply(format_pct_normal)
+    # Format persentase dengan 2 desimal koma (misal 60,00%, 40,00%, 2,00%, 98,00%)
+    pct_cols = [
+        "Skor Kinerja (%)", "Skor Kehadiran (%)", "TMK Persen",
+        "Persentase Total", "Skor Total (%)", "Persentase Kinerja",
+        "TMA Persen", "TMA Lain Persen", "Persen a", "Persen b",
+        "Persen c", "Persen d", "persentase hadir", "Skor Tidak Disiplin"
+    ]
+    for col in pct_cols:
+        if col in df.columns:
+            df[col] = df[col].apply(format_persen)
 
     df.to_csv(output_csv, sep=';', encoding='utf-8', index=False)
