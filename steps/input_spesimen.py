@@ -41,7 +41,9 @@ def input_spesimen(dir_rekap, dir_rekap_tandatangan, log):
 
             log(f"Proses: {filename}")
 
+            doc = None
             try:
+                doc = fitz.open(input_path)
                 keywords = ["KEPALA DINAS KEHUTANAN", "KEPALA DINAS", "PLT. KEPALA DINAS", "PLH. KEPALA DINAS"]
 
                 for page in doc:
@@ -89,7 +91,10 @@ def input_spesimen(dir_rekap, dir_rekap_tandatangan, log):
                     deflate_fonts=True,
                     clean=True
                 )
+            except Exception as e:
+                log(f"  ⚠ Error input spesimen pada {filename}: {e}")
             finally:
-                doc.close()
+                if doc is not None:
+                    doc.close()
 
     log(f"✔ Selesai. Total file diproses: {total_file}")
