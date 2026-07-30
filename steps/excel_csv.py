@@ -194,14 +194,14 @@ def format_rupiah(val):
 
 def format_persen(val):
     if val is None or pd.isna(val) or str(val).strip() == "":
-        return "0,00%"
+        return "0,00"
     try:
         s = str(val).strip().replace("%", "")
         import re
         s = re.sub(r"(?i)rp\.?\s*", "", s)
         f = float(s)
         formatted = f"{f:.2f}".replace(".", ",")
-        return f"{formatted}%"
+        return formatted
     except (ValueError, TypeError):
         return str(val)
 
