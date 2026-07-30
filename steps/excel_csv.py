@@ -296,6 +296,9 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
         if col in df.columns:
             df[col] = df[col].apply(format_persen)
 
+    if "tte" in df.columns:
+        df["tte"] = df["tte"].fillna("")
+
     try:
         df.to_csv(output_csv, sep=';', encoding='utf-8', index=False)
     except PermissionError:
