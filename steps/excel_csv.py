@@ -155,6 +155,18 @@ def recalculate_disiplin_sheet(ws):
         set_val(r, "jumlah potongan", jumlah_potongan)
 
 
+def format_rupiah(val):
+    if val is None or pd.isna(val) or str(val).strip() == "":
+        return "0"
+    try:
+        n = int(round(float(val)))
+        if n == 0:
+            return "0"
+        return f"{n:,}".replace(",", ".")
+    except (ValueError, TypeError):
+        return str(val)
+
+
 def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
     file_excel = os.path.abspath(file_excel)
     output_folder = os.path.abspath(output_folder)
@@ -174,4 +186,15 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
 
     # Baca sheet "DISIPLIN" dari excel dan ekspor ke CSV
     df = pd.read_excel(file_excel, sheet_name=sheet_name)
+
+    # Format kolom nominal rupiah dengan pemisah titik ribuan (misal 9.435.000)
+    currency_cols = [
+        "TPP Asli", "jumlah TP", "Tambahan 20%", "TPP Kotor",
+        "PPh21", "BPJS", "jumlah bersih", "zakat", "TPP bersih",
+        "pengurangan disiplin", "jumlah potongan"
+    ]
+    for col in currency_cols:
+        if col in df.columns:
+            df[col] = df[col].apply(format_rupiah)
+
     df.to_csv(output_csv, sep=';', encoding='utf-8', index=False)

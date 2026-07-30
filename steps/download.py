@@ -30,19 +30,28 @@ def stop_download():
     stop_event.set()
     if current_log:
         try:
-            current_log("\nMenghentikan download...")
-            current_log("Menghentikan worker...")
-            current_log("Menutup browser...")
-            current_log("Membatalkan task yang belum berjalan...")
+            current_log("\nMenghentikan proses secepatnya...")
+            current_log("Menutup seluruh browser dan membatalkan antrean...")
         except Exception:
             pass
+
     with drivers_lock:
-        for driver in list(drivers):
-            try:
-                driver.quit()
-            except Exception:
-                pass
+        active_drivers = list(drivers)
         drivers.clear()
+
+    def kill_driver_fast(d):
+        try:
+            if hasattr(d, "service") and hasattr(d.service, "process") and d.service.process:
+                d.service.process.kill()
+        except Exception:
+            pass
+        try:
+            d.quit()
+        except Exception:
+            pass
+
+    for driver in active_drivers:
+        threading.Thread(target=kill_driver_fast, args=(driver,), daemon=True).start()
 
 def perform_manual_login(login_url, log):
     if stop_event.is_set():
