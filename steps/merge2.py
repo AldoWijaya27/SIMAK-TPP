@@ -184,11 +184,19 @@ def _run_windows_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_
 
             log(f"Selesai: {final}")
 
-        doc.Close(False)
-        word.Quit()
         log("Semua proses mail merge selesai.")
 
     finally:
+        if 'doc' in locals() and doc is not None:
+            try:
+                doc.Close(False)
+            except Exception:
+                pass
+        if 'word' in locals() and word is not None:
+            try:
+                word.Quit()
+            except Exception:
+                pass
         pythoncom.CoUninitialize()
 
 

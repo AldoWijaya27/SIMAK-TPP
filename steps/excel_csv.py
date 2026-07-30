@@ -206,6 +206,43 @@ def format_persen(val):
         return str(val)
 
 
+def release_file_lock_if_needed(file_path):
+    """
+    Jika file sedang terkunci di Windows oleh WINWORD.EXE atau wps.exe (sisa Mail Merge sebelumnya),
+    secara otomatis mematikan proses background Word/WPS agar file dapat ditulis ulang.
+    """
+    import sys, os
+    if sys.platform != "win32" or not os.path.exists(file_path):
+        return
+    import subprocess, time
+    try:
+        with open(file_path, "a"):
+            pass
+        return
+    except IOError:
+        pass
+
+    try:
+        subprocess.run(
+            ["taskkill", "/F", "/IM", "WINWORD.EXE"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=0x08000000
+        )
+        subprocess.run(
+            ["taskkill", "/F", "/IM", "kwps.exe"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=0x08000000
+        )
+        subprocess.run(
+            ["taskkill", "/F", "/IM", "wps.exe"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=0x08000000
+        )
+        time.sleep(0.5)
+    except Exception:
+        pass
+
+
 def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
     file_excel = os.path.abspath(file_excel)
     output_folder = os.path.abspath(output_folder)
@@ -213,16 +250,25 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
     filename = os.path.splitext(os.path.basename(file_excel))[0] + ".csv"
     output_csv = os.path.join(output_folder, filename)
 
+    # Lepaskan penguncian file jika ada proses background Word yang masih memegang file
+    release_file_lock_if_needed(file_excel)
+    release_file_lock_if_needed(output_csv)
+
     # Evaluasi seluruh rumus openpyxl dan simpan ke excel terlebih dahulu
     from openpyxl import load_workbook
     wb = load_workbook(file_excel, data_only=False)
     sheet_name = "DISIPLIN" if "DISIPLIN" in wb.sheetnames else wb.sheetnames[0]
     ws = wb[sheet_name]
 
+    recalculate_disiplin_sheet(ws)
     try:
         wb.save(file_excel)
     except PermissionError:
-        raise Exception(f"File Excel '{os.path.basename(file_excel)}' sedang dibuka di Microsoft Excel atau aplikasi lain. Silakan tutup file tersebut terlebih dahulu.")
+        release_file_lock_if_needed(file_excel)
+        try:
+            wb.save(file_excel)
+        except PermissionError:
+            raise Exception(f"File Excel '{os.path.basename(file_excel)}' sedang dibuka di Microsoft Excel atau aplikasi lain. Silakan tutup file tersebut terlebih dahulu.")
     finally:
         wb.close()
 
@@ -253,4 +299,8 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
     try:
         df.to_csv(output_csv, sep=';', encoding='utf-8', index=False)
     except PermissionError:
-        raise Exception(f"File CSV '{os.path.basename(output_csv)}' sedang dibuka di Microsoft Excel atau aplikasi lain. Silakan tutup file tersebut terlebih dahulu lalu coba lagi.")
+        release_file_lock_if_needed(output_csv)
+        try:
+            df.to_csv(output_csv, sep=';', encoding='utf-8', index=False)
+        except PermissionError:
+            raise Exception(f"File CSV '{os.path.basename(output_csv)}' sedang dibuka di Microsoft Excel atau aplikasi lain. Silakan tutup jendela Excel/Word Anda terlebih dahulu lalu coba lagi.")
