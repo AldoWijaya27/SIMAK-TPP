@@ -6,19 +6,22 @@ from utils import merge_pdf, sanitize_filename
 
 
 # ============================================================
-# DEFINISI JABATAN YANG DIMASUKKAN KE DALAM MERGE
-# Setiap entry: (nama_kelompok, [kata_kunci_substring])
-# Pencocokan dilakukan secara case-insensitive substring match.
-# Tambahkan kelompok baru di sini sesuai kebutuhan.
+# DEFINISI KELOMPOK BERDASARKAN JABATAN PIMPINAN
+# Setiap entry: (nama_kelompok, nilai_jabatan_pimpinan, nama_file_output)
+# Pencocokan: case-insensitive exact match pada kolom JABATAN PIMPINAN.
 # ============================================================
-KELOMPOK_JABATAN = [
-    ("Kepala Bidang", ["kepala bidang"]),
-    ("Kepala UPTD", ["kepala uptd"]),
-    ("Sekretaris",   ["sekretaris"]),
-    ("Madya",        ["madya"]),
+KELOMPOK_PIMPINAN = [
+    ("Kepala Dinas", "Plt. KEPALA DINAS KEHUTANAN", "Merge_Pejabat_KaDis"),
+    ("Sekretaris",   "SEKRETARIS",                   "Merge_Pejabat_Sekretaris"),
 ]
 
-# Nama file output tunggal (tanpa ekstensi)
+# Legacy constants — dipertahankan agar split_pdf_jabatan.py tidak error import
+KELOMPOK_JABATAN = [
+    ("Kepala Bidang", ["kepala bidang"]),
+    ("Kepala UPTD",   ["kepala uptd"]),
+    ("Sekretaris",    ["sekretaris"]),
+    ("Madya",         ["madya"]),
+]
 NAMA_FILE_OUTPUT = "Merge_Pejabat"
 
 
@@ -39,16 +42,15 @@ def _find_pdf_for_pegawai(dir_output, nama_sanitized):
 
 def merge_pdf_by_jabatan(dir_output, csv_file, bulan, tahun, log):
     """
-    Gabungkan semua PDF dari jabatan yang ditentukan menjadi SATU file PDF.
+    Gabungkan PDF berdasarkan JABATAN PIMPINAN menjadi file-file terpisah.
 
-    Args:
-        dir_output (str): Folder root PERHITUNGAN TPP
-        csv_file   (str): Path ke Disiplin_TPP_Lengkap.csv
-        bulan      (str): Bulan periode (mis. "06")
-        tahun      (int): Tahun periode (mis. 2026)
-        log        (callable): Fungsi log ke GUI
+    Output:
+      - Merge_Pejabat_KaDis_{bulan}_{tahun}.pdf
+        → pegawai yang pimpinannya Plt. KEPALA DINAS KEHUTANAN
+      - Merge_Pejabat_Sekretaris_{bulan}_{tahun}.pdf
+        → pegawai yang pimpinannya SEKRETARIS
     """
-    log("── Memulai proses Merge PDF per Jabatan ──")
+    log("── Memulai proses Merge PDF per Jabatan Pimpinan ──")
 
     # --- Validasi CSV ---
     if not csv_file or not os.path.exists(csv_file):
@@ -67,13 +69,16 @@ def merge_pdf_by_jabatan(dir_output, csv_file, bulan, tahun, log):
         log("❌ Kolom 'NAMA' tidak ditemukan di CSV.")
         return
 
-    if "JABATAN" not in df.columns:
-        log("❌ Kolom 'JABATAN' tidak ditemukan di CSV. Pastikan data pegawai memiliki kolom JABATAN.")
+    col_jp = "JABATAN PIMPINAN"
+    if col_jp not in df.columns:
+        log(f"❌ Kolom '{col_jp}' tidak ditemukan di CSV.")
         return
 
     # Bersihkan NaN
-    df["NAMA"]    = df["NAMA"].fillna("").str.strip()
-    df["JABATAN"] = df["JABATAN"].fillna("").str.strip()
+    df["NAMA"] = df["NAMA"].fillna("").str.strip()
+    df[col_jp] = df[col_jp].fillna("").str.strip()
+    if "JABATAN" in df.columns:
+        df["JABATAN"] = df["JABATAN"].fillna("").str.strip()
 
     # Filter baris yang punya nama
     df = df[df["NAMA"] != ""]
@@ -83,57 +88,62 @@ def merge_pdf_by_jabatan(dir_output, csv_file, bulan, tahun, log):
     dir_output  = os.path.abspath(dir_output)
     periode_str = f"{bulan}_{tahun}"
 
-    # --- Kumpulkan semua PDF dari seluruh kelompok jabatan ---
-    # Urutan: per kelompok (sesuai urutan KELOMPOK_JABATAN), lalu nama alfabetis
-    semua_pdf   = []
-    total_cocok = 0
+    total_berhasil = 0
 
-    for nama_kelompok, kata_kunci_list in KELOMPOK_JABATAN:
+    # --- Proses setiap kelompok pimpinan ---
+    for nama_kelompok, nilai_jp, nama_file_base in KELOMPOK_PIMPINAN:
         from steps.download import stop_event
         if stop_event.is_set():
-            log("Proses Merge PDF per Jabatan dibatalkan oleh pengguna.")
+            log("Proses Merge PDF per Jabatan Pimpinan dibatalkan oleh pengguna.")
             raise SystemExit()
 
-        # Filter pegawai yang jabatannya cocok
-        def _cocok(jabatan_pegawai, kw_list=kata_kunci_list):
-            j = jabatan_pegawai.lower()
-            return any(kw.lower() in j for kw in kw_list)
-
-        pegawai_cocok = df[df["JABATAN"].apply(_cocok)].copy()
+        # Filter: case-insensitive exact match pada JABATAN PIMPINAN
+        pegawai_cocok = df[df[col_jp].str.upper() == nilai_jp.upper()].copy()
 
         if pegawai_cocok.empty:
-            log(f"  ⚠ Tidak ada pegawai dengan jabatan '{nama_kelompok}'. Dilewati.")
+            log(f"  ⚠ Tidak ada pegawai dengan pimpinan '{nama_kelompok}'. Dilewati.")
             continue
 
         pegawai_cocok = pegawai_cocok.sort_values("NAMA")
-        log(f"\n  📂 {nama_kelompok} ({len(pegawai_cocok)} pegawai):")
+        log(f"\n  📂 Pimpinan: {nama_kelompok} ({len(pegawai_cocok)} pegawai):")
+
+        semua_pdf = []
 
         for _, row in pegawai_cocok.iterrows():
+            if stop_event.is_set():
+                log("Proses Merge PDF per Jabatan Pimpinan dibatalkan oleh pengguna.")
+                raise SystemExit()
+
             nama_raw  = row["NAMA"]
-            jabatan   = row["JABATAN"]
             nama_safe = sanitize_filename(nama_raw)
+
+            jabatan = row.get("JABATAN", "") if "JABATAN" in df.columns else ""
+            if pd.isna(jabatan):
+                jabatan = ""
 
             pdf_path = _find_pdf_for_pegawai(dir_output, nama_safe)
 
             if pdf_path:
                 log(f"    ✔ {nama_raw} ({jabatan})")
                 semua_pdf.append(pdf_path)
-                total_cocok += 1
             else:
                 log(f"    ⚠ PDF tidak ditemukan untuk: {nama_raw}")
 
-    # --- Merge semua PDF menjadi 1 file ---
-    if not semua_pdf:
-        log("\n❌ Tidak ada PDF yang bisa digabungkan. Periksa data jabatan dan file PDF.")
-        return
+        # --- Merge PDF untuk kelompok ini ---
+        if not semua_pdf:
+            log(f"\n  ❌ Tidak ada PDF yang bisa digabungkan untuk kelompok '{nama_kelompok}'.")
+            continue
 
-    nama_file_output = f"{NAMA_FILE_OUTPUT}_{periode_str}.pdf"
-    output_path      = os.path.join(dir_output, nama_file_output)
+        nama_file_output = f"{nama_file_base}_{periode_str}.pdf"
+        output_path = os.path.join(dir_output, nama_file_output)
 
-    log(f"\n  Menggabungkan {total_cocok} PDF menjadi satu file...")
+        log(f"\n  Menggabungkan {len(semua_pdf)} PDF menjadi {nama_file_output}...")
 
-    try:
-        merge_pdf(semua_pdf, output_path)
-        log(f"✅ Berhasil! File tersimpan → {nama_file_output}")
-    except Exception as e:
-        log(f"❌ Gagal merge PDF: {e}")
+        try:
+            merge_pdf(semua_pdf, output_path)
+            log(f"  ✅ Berhasil! → {nama_file_output}")
+            total_berhasil += len(semua_pdf)
+        except Exception as e:
+            log(f"  ❌ Gagal merge PDF untuk '{nama_kelompok}': {e}")
+
+    log(f"\n✅ Proses Merge PDF per Jabatan Pimpinan selesai. Total {total_berhasil} dokumen digabungkan.")
