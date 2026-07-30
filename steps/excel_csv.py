@@ -278,12 +278,37 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
 
     recalculate_disiplin_sheet(ws)
 
-    # 3. Kembalikan nilai ter-evaluasi untuk sel berbasis rumus (seperti kolom tte) agar tidak hilang saat di-save
+    # 3. Kembalikan nilai ter-evaluasi untuk sel berbasis rumus agar tidak hilang saat di-save
     for (r, c), val_c in cached_values.items():
         if r <= ws.max_row and c <= ws.max_column:
             curr_val = ws.cell(r, c).value
             if curr_val is None or str(curr_val).startswith("="):
                 ws.cell(r, c).value = val_c
+
+    # 4. Evaluasi kolom TTE secara presisi per baris berdasarkan Atasan / Penandatangan TTE
+    tte_col = None
+    nip_p_col = None
+    jab_p_col = None
+    for c in range(1, ws.max_column + 1):
+        h = str(ws.cell(1, c).value or "").strip().lower()
+        if h == "tte":
+            tte_col = c
+        elif h == "nip pimpinan":
+            nip_p_col = c
+        elif h == "jabatan pimpinan":
+            jab_p_col = c
+
+    if tte_col:
+        auth_nips = {"196902051989101002", "198204182006042012"}
+        for r in range(2, ws.max_row + 1):
+            nip_p = str(ws.cell(r, nip_p_col).value or "").replace(" ", "").strip() if nip_p_col else ""
+            jab_p = str(ws.cell(r, jab_p_col).value or "").strip().upper() if jab_p_col else ""
+
+            is_auth = (nip_p in auth_nips) or (("KEPALA DINAS" in jab_p or "SEKRETARIS" in jab_p) and "SEKRETARIS DAERAH" not in jab_p)
+            if is_auth:
+                ws.cell(r, tte_col).value = "${ttd_pengirim}"
+            else:
+                ws.cell(r, tte_col).value = ""
 
     try:
         wb.save(file_excel)
