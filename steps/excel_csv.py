@@ -285,21 +285,6 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
             if curr_val is None or str(curr_val).startswith("="):
                 ws.cell(r, c).value = val_c
 
-    # Jika sel tte masih berbentuk rumus dan nilainya mengandung ${ttd_pengirim}, set nilainya
-    tte_col = None
-    for c in range(1, ws.max_column + 1):
-        if ws.cell(1, c).value and str(ws.cell(1, c).value).strip().lower() == "tte":
-            tte_col = c
-            break
-    if tte_col:
-        for r in range(2, ws.max_row + 1):
-            cell_val = ws.cell(r, tte_col).value
-            if cell_val is not None and str(cell_val).startswith("="):
-                if "${ttd_pengirim}" in str(cell_val):
-                    ws.cell(r, tte_col).value = "${ttd_pengirim}"
-                else:
-                    ws.cell(r, tte_col).value = ""
-
     try:
         wb.save(file_excel)
     except PermissionError:
