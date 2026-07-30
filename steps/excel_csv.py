@@ -254,13 +254,52 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
     release_file_lock_if_needed(file_excel)
     release_file_lock_if_needed(output_csv)
 
-    # Evaluasi seluruh rumus openpyxl dan simpan ke excel terlebih dahulu
     from openpyxl import load_workbook
+
+    # 1. Simpan nilai ter-evaluasi (cached value) sebelum file dibuka dalam mode rumus
+    cached_values = {}
+    try:
+        wb_data = load_workbook(file_excel, data_only=True)
+        sheet_data_name = "DISIPLIN" if "DISIPLIN" in wb_data.sheetnames else wb_data.sheetnames[0]
+        ws_data = wb_data[sheet_data_name]
+        for r in range(1, ws_data.max_row + 1):
+            for c in range(1, ws_data.max_column + 1):
+                val_c = ws_data.cell(r, c).value
+                if val_c is not None:
+                    cached_values[(r, c)] = val_c
+        wb_data.close()
+    except Exception:
+        pass
+
+    # 2. Buka workbook untuk rekalkulasi disiplin
     wb = load_workbook(file_excel, data_only=False)
     sheet_name = "DISIPLIN" if "DISIPLIN" in wb.sheetnames else wb.sheetnames[0]
     ws = wb[sheet_name]
 
     recalculate_disiplin_sheet(ws)
+
+    # 3. Kembalikan nilai ter-evaluasi untuk sel berbasis rumus (seperti kolom tte) agar tidak hilang saat di-save
+    for (r, c), val_c in cached_values.items():
+        if r <= ws.max_row and c <= ws.max_column:
+            curr_val = ws.cell(r, c).value
+            if curr_val is None or str(curr_val).startswith("="):
+                ws.cell(r, c).value = val_c
+
+    # Jika sel tte masih berbentuk rumus dan nilainya mengandung ${ttd_pengirim}, set nilainya
+    tte_col = None
+    for c in range(1, ws.max_column + 1):
+        if ws.cell(1, c).value and str(ws.cell(1, c).value).strip().lower() == "tte":
+            tte_col = c
+            break
+    if tte_col:
+        for r in range(2, ws.max_row + 1):
+            cell_val = ws.cell(r, tte_col).value
+            if cell_val is not None and str(cell_val).startswith("="):
+                if "${ttd_pengirim}" in str(cell_val):
+                    ws.cell(r, tte_col).value = "${ttd_pengirim}"
+                else:
+                    ws.cell(r, tte_col).value = ""
+
     try:
         wb.save(file_excel)
     except PermissionError:
