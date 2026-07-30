@@ -222,4 +222,32 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
         if col in df.columns:
             df[col] = df[col].apply(format_rupiah)
 
+    # Format persentase persis sesuai tampilan tabel perhitungan TPP (misal 060%, 040%, 000%, 100%)
+    def format_pct_3digit(val):
+        if val is None or pd.isna(val) or str(val).strip() == "":
+            return "000%"
+        try:
+            n = int(round(float(val)))
+            return f"{n:03d}%"
+        except (ValueError, TypeError):
+            return str(val)
+
+    def format_pct_normal(val):
+        if val is None or pd.isna(val) or str(val).strip() == "":
+            return "100%"
+        try:
+            n = int(round(float(val)))
+            return f"{n}%"
+        except (ValueError, TypeError):
+            return str(val)
+
+    if "Skor Kinerja (%)" in df.columns:
+        df["Skor Kinerja (%)"] = df["Skor Kinerja (%)"].apply(format_pct_3digit)
+    if "Skor Kehadiran (%)" in df.columns:
+        df["Skor Kehadiran (%)"] = df["Skor Kehadiran (%)"].apply(format_pct_3digit)
+    if "TMK Persen" in df.columns:
+        df["TMK Persen"] = df["TMK Persen"].apply(format_pct_3digit)
+    if "Persentase Total" in df.columns:
+        df["Persentase Total"] = df["Persentase Total"].apply(format_pct_normal)
+
     df.to_csv(output_csv, sep=';', encoding='utf-8', index=False)
