@@ -219,9 +219,12 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
     sheet_name = "DISIPLIN" if "DISIPLIN" in wb.sheetnames else wb.sheetnames[0]
     ws = wb[sheet_name]
 
-    recalculate_disiplin_sheet(ws)
-    wb.save(file_excel)
-    wb.close()
+    try:
+        wb.save(file_excel)
+    except PermissionError:
+        raise Exception(f"File Excel '{os.path.basename(file_excel)}' sedang dibuka di Microsoft Excel atau aplikasi lain. Silakan tutup file tersebut terlebih dahulu.")
+    finally:
+        wb.close()
 
     # Baca sheet "DISIPLIN" dari excel dan ekspor ke CSV
     df = pd.read_excel(file_excel, sheet_name=sheet_name)
@@ -247,4 +250,7 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
         if col in df.columns:
             df[col] = df[col].apply(format_persen)
 
-    df.to_csv(output_csv, sep=';', encoding='utf-8', index=False)
+    try:
+        df.to_csv(output_csv, sep=';', encoding='utf-8', index=False)
+    except PermissionError:
+        raise Exception(f"File CSV '{os.path.basename(output_csv)}' sedang dibuka di Microsoft Excel atau aplikasi lain. Silakan tutup file tersebut terlebih dahulu lalu coba lagi.")
