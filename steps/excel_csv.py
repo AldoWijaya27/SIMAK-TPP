@@ -15,8 +15,23 @@ def recalculate_disiplin_sheet(ws):
         v = ws.cell(row, c).value
         if v is None or str(v).startswith("="):
             return default
-        try:
+        if isinstance(v, (int, float)):
             return float(v)
+
+        s = str(v).strip()
+        import re
+        s = re.sub(r"(?i)rp\.?\s*", "", s)
+        if "." in s and "," in s:
+            s = s.replace(".", "").replace(",", ".")
+        elif "." in s:
+            parts = s.split(".")
+            if len(parts) > 2 or (len(parts) == 2 and len(parts[1]) == 3 and parts[0].isdigit()):
+                s = s.replace(".", "")
+        elif "," in s:
+            s = s.replace(",", ".")
+
+        try:
+            return float(s)
         except (ValueError, TypeError):
             return str(v)
 
@@ -159,9 +174,19 @@ def format_rupiah(val):
     if val is None or pd.isna(val) or str(val).strip() == "":
         return "0"
     try:
-        n = int(round(float(val)))
-        if n == 0:
-            return "0"
+        s = str(val).strip()
+        import re
+        s = re.sub(r"(?i)rp\.?\s*", "", s)
+        if "." in s and "," in s:
+            s = s.replace(".", "").replace(",", ".")
+        elif "." in s:
+            parts = s.split(".")
+            if len(parts) > 2 or (len(parts) == 2 and len(parts[1]) == 3 and parts[0].isdigit()):
+                s = s.replace(".", "")
+        elif "," in s:
+            s = s.replace(",", ".")
+
+        n = int(round(float(s)))
         return f"{n:,}".replace(",", ".")
     except (ValueError, TypeError):
         return str(val)

@@ -1329,6 +1329,13 @@ class App:
             self.root.after(0, lambda: messagebox.showerror("Terjadi Kesalahan Kritis", error_msg))
         finally:
             self.is_running = False
+            # Pastikan seluruh browser Selenium/Chrome ditutup dan tidak ada proses worker yang menggantung di Task Manager
+            try:
+                from steps.download import cleanup_all_drivers
+                cleanup_all_drivers()
+            except Exception:
+                pass
+
             self.root.after(0, lambda: self.btn_action.configure(
                 text="▶   JALANKAN",
                 fg_color=COLORS["btn_run"],

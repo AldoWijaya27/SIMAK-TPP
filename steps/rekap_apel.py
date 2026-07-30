@@ -317,7 +317,7 @@ def _tulis_sheet_rekap_apel(ws, bidang, daftar_peg, tanggal_bulan, pdf_map, tang
                 cell.fill = FILL_LIBUR
                 cell.font = FONT_LIBUR
             elif status == "TK":
-                cell = ws.cell(row=row_idx, column=col, value="TK")
+                cell = ws.cell(row=row_idx, column=col, value="x")
                 cell.fill = FILL_TK
                 cell.font = FONT_TK
                 total_tk += 1

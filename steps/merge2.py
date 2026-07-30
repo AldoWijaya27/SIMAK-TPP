@@ -33,7 +33,39 @@ def patched_split(s, *args, **kwargs):
 shlex.split = patched_split
 
 
+def sanitize_word_template_switches(template_path):
+    """
+    Membersihkan field switch `\# #.###` di dalam file template Word .docx
+    yang menyebabkan Word di Windows memangkas angka 9.000.000 menjadi 9.000.
+    """
+    if not os.path.exists(template_path) or not template_path.lower().endswith(".docx"):
+        return
+    import zipfile, shutil
+    try:
+        temp_file = template_path + ".tmp"
+        modified = False
+        with zipfile.ZipFile(template_path, 'r') as zin:
+            with zipfile.ZipFile(temp_file, 'w') as zout:
+                for item in zin.infolist():
+                    data = zin.read(item.filename)
+                    if item.filename == 'word/document.xml':
+                        xml = data.decode('utf-8')
+                        if '\\# #.###' in xml or '\\# "0,00' in xml:
+                            xml = xml.replace('\\# #.###', '').replace('\\# "0,00', '')
+                            data = xml.encode('utf-8')
+                            modified = True
+                    zout.writestr(item, data)
+        if modified:
+            shutil.move(temp_file, template_path)
+        else:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+    except Exception:
+        pass
+
+
 def _run_windows_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word, log):
+    sanitize_word_template_switches(template_word)
     pythoncom.CoInitialize()
 
     try:
@@ -99,16 +131,45 @@ def _run_windows_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_
             doc.MailMerge.DataSource.LastRecord = idx + 1
             doc.MailMerge.Execute(False)
 
-            result = word.ActiveDocument
+            # Beri jeda singkat agar Word selesai memproses Mail Merge
+            time.sleep(0.3)
+
+            # Retry untuk mengambil ActiveDocument jika Word COM masih busy
+            result = None
+            for attempt in range(5):
+                try:
+                    result = word.ActiveDocument
+                    if result is not None:
+                        break
+                except Exception:
+                    pass
+                time.sleep(0.5)
+
+            if result is None:
+                raise Exception("Word COM tidak merespon saat mengambil dokumen hasil Mail Merge.")
 
             temp_pdf = os.path.abspath(os.path.join(TEMP_DIR, f"{nama}.pdf"))
 
-            result.ExportAsFixedFormat(
-                OutputFileName=temp_pdf,
-                ExportFormat=17
-            )
+            # Retry untuk ExportAsFixedFormat antisipasi error 'Call was rejected by callee'
+            for attempt in range(5):
+                try:
+                    result.ExportAsFixedFormat(
+                        OutputFileName=temp_pdf,
+                        ExportFormat=17
+                    )
+                    break
+                except Exception as e:
+                    if attempt == 4:
+                        raise e
+                    time.sleep(0.5)
 
-            result.Close(False)
+            # Retry untuk menutup dokumen temp
+            for attempt in range(5):
+                try:
+                    result.Close(False)
+                    break
+                except Exception:
+                    time.sleep(0.3)
 
             rekap = find_rekap_pdf(DIR_REKAP, bidang, nama)
 
@@ -130,6 +191,7 @@ def _run_windows_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_
 
 
 def _run_macos_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word, log):
+    sanitize_word_template_switches(template_word)
     log("[MACOS] Memulai proses Mail Merge nyata via docx-mailmerge2 + LibreOffice...")
     
     if not MAILMERGE_AVAILABLE:

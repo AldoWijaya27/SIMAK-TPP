@@ -26,6 +26,46 @@ shared_cookies = []
 stop_event = threading.Event()
 current_log = None
 
+def cleanup_driver(d):
+    """Menutup driver Selenium beserta seluruh proses Chrome yang terkait."""
+    if d is None:
+        return
+    try:
+        d.quit()
+    except Exception:
+        pass
+
+    # Jika d.quit() tidak membersihkan child process di Windows, bunuh pohon prosesnya (process tree)
+    try:
+        if hasattr(d, "service") and hasattr(d.service, "process") and d.service.process:
+            pid = d.service.process.pid
+            if sys.platform == "win32" and pid:
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(pid)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=0x08000000  # CREATE_NO_WINDOW
+                )
+            else:
+                d.service.process.kill()
+    except Exception:
+        pass
+
+def cleanup_all_drivers():
+    """Menutup seluruh browser Selenium yang aktif dan membebaskan memori."""
+    with drivers_lock:
+        active_drivers = list(drivers)
+        drivers.clear()
+
+    threads = []
+    for driver in active_drivers:
+        t = threading.Thread(target=cleanup_driver, args=(driver,), daemon=True)
+        t.start()
+        threads.append(t)
+
+    for t in threads:
+        t.join(timeout=3.0)
+
 def stop_download():
     stop_event.set()
     if current_log:
@@ -35,23 +75,7 @@ def stop_download():
         except Exception:
             pass
 
-    with drivers_lock:
-        active_drivers = list(drivers)
-        drivers.clear()
-
-    def kill_driver_fast(d):
-        try:
-            if hasattr(d, "service") and hasattr(d.service, "process") and d.service.process:
-                d.service.process.kill()
-        except Exception:
-            pass
-        try:
-            d.quit()
-        except Exception:
-            pass
-
-    for driver in active_drivers:
-        threading.Thread(target=kill_driver_fast, args=(driver,), daemon=True).start()
+    cleanup_all_drivers()
 
 def perform_manual_login(login_url, log):
     if stop_event.is_set():
@@ -370,14 +394,8 @@ def download_rekap(excel_pegawai, dir_rekap, bulan, tahun, log, max_workers=5):
                         pass
 
     finally:
-        # Tutup seluruh browser secara aman
-        with drivers_lock:
-            for d in list(drivers):
-                try:
-                    d.quit()
-                except:
-                    pass
-            drivers.clear()
+        # Tutup seluruh browser secara aman dan hilangkan sisa proses Chrome
+        cleanup_all_drivers()
 
     if stop_event.is_set():
         log("Download dihentikan oleh pengguna.")
