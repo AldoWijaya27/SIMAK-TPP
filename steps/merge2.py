@@ -35,12 +35,13 @@ shlex.split = patched_split
 
 def sanitize_word_template_switches(template_path):
     """
-    Membersihkan field switch `\# #.###` di dalam file template Word .docx
-    yang menyebabkan Word di Windows memangkas angka 9.000.000 menjadi 9.000.
+    Membersihkan field switch `\# #.###` dan `\#"0,00"` di dalam file template Word .docx
+    yang menyebabkan Word di Windows memangkas angka 9.000.000 menjadi 9.000
+    serta menampilkan 60% menjadi 060%.
     """
     if not os.path.exists(template_path) or not template_path.lower().endswith(".docx"):
         return
-    import zipfile, shutil
+    import zipfile, shutil, re
     try:
         temp_file = template_path + ".tmp"
         modified = False
@@ -50,9 +51,10 @@ def sanitize_word_template_switches(template_path):
                     data = zin.read(item.filename)
                     if item.filename == 'word/document.xml':
                         xml = data.decode('utf-8')
-                        if '\\# #.###' in xml or '\\# "0,00' in xml:
-                            xml = xml.replace('\\# #.###', '').replace('\\# "0,00', '')
-                            data = xml.encode('utf-8')
+                        xml_fixed = re.sub(r'\\#\s*\"0,00\"', '', xml)
+                        xml_fixed = re.sub(r'\\#\s*#\.###', '', xml_fixed)
+                        if xml_fixed != xml:
+                            data = xml_fixed.encode('utf-8')
                             modified = True
                     zout.writestr(item, data)
         if modified:
