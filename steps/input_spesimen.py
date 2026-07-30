@@ -5,9 +5,9 @@ from app_path import get_file
 def input_spesimen(dir_rekap, dir_rekap_tandatangan, log):
 
     # arahkan ke folder files menggunakan get_file untuk mendukung mode frozen .exe
-    TTD_IMAGE = get_file("files", "spesimen-compressed.png")
+    TTD_IMAGE = get_file("files", "spesimen.png")
     if not os.path.exists(TTD_IMAGE):
-        TTD_IMAGE = get_file("files", "spesimen.png")
+        TTD_IMAGE = get_file("files", "spesimen-compressed.png")
 
     if not os.path.exists(TTD_IMAGE):
         log(f"❌ File gambar spesimen tanda tangan tidak ditemukan di folder 'files'. Pastikan 'files/spesimen-compressed.png' tersedia.")
