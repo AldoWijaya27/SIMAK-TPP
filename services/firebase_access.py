@@ -6,7 +6,7 @@ from urllib import error, request
 
 
 class UserAccessGateway(Protocol):
-    def is_allowed(self, username: str) -> bool:
+    def is_allowed(self, username: str) -> bool | None:
         ...
 
 
@@ -15,7 +15,13 @@ class FirebaseRealtimeUserAccessGateway:
     base_url: str
     timeout_seconds: int = 8
 
-    def is_allowed(self, username: str) -> bool:
+    def is_allowed(self, username: str) -> bool | None:
+        """
+        Return:
+          True  → akses diizinkan
+          False → akses ditolak (username tidak terdaftar)
+          None  → tidak bisa konek ke server (no internet / timeout / firewall)
+        """
         username = (username or "").strip().lower()
         if not username:
             return False
@@ -28,7 +34,9 @@ class FirebaseRealtimeUserAccessGateway:
             with request.urlopen(req, timeout=self.timeout_seconds, context=context) as response:
                 body = response.read().decode("utf-8", errors="ignore").strip()
         except (error.URLError, error.HTTPError, TimeoutError, ValueError):
-            return False
+            # Tidak bisa konek ke Firebase — kembalikan None agar pemanggil bisa
+            # menampilkan pesan error yang spesifik (bukan sekadar "ERROR!")
+            return None
 
         if not body:
             return False
@@ -45,7 +53,7 @@ class FirebaseRealtimeUserAccessGateway:
 class ValidateUserAccess:
     gateway: UserAccessGateway
 
-    def execute(self, username: str) -> bool:
+    def execute(self, username: str) -> bool | None:
         # timestamp disiapkan untuk extensibility audit ke depan.
         _ = datetime.now(timezone.utc).isoformat()
         return self.gateway.is_allowed(username)

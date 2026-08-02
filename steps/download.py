@@ -30,24 +30,45 @@ def cleanup_driver(d):
     """Menutup driver Selenium beserta seluruh proses Chrome yang terkait."""
     if d is None:
         return
-    try:
-        d.quit()
-    except Exception:
-        pass
 
-    # Jika d.quit() tidak membersihkan child process di Windows, bunuh pohon prosesnya (process tree)
+    # Ambil PID chromedriver sebelum quit, agar bisa di-taskkill jika quit hang
+    pid = None
     try:
         if hasattr(d, "service") and hasattr(d.service, "process") and d.service.process:
             pid = d.service.process.pid
-            if sys.platform == "win32" and pid:
-                subprocess.run(
-                    ["taskkill", "/F", "/T", "/PID", str(pid)],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    creationflags=0x08000000  # CREATE_NO_WINDOW
-                )
-            else:
+    except Exception:
+        pass
+
+    # Jalankan d.quit() di thread terpisah dengan timeout 5 detik
+    # Ini mencegah hang lama di laptop dengan spesifikasi rendah / RAM terbatas
+    quit_done = threading.Event()
+
+    def _quit():
+        try:
+            d.quit()
+        except Exception:
+            pass
+        finally:
+            quit_done.set()
+
+    t = threading.Thread(target=_quit, daemon=True)
+    t.start()
+    t.join(timeout=5.0)  # Maksimal tunggu 5 detik
+
+    # Jika d.quit() tidak membersihkan child process di Windows, bunuh pohon prosesnya (process tree)
+    try:
+        if pid and sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=0x08000000  # CREATE_NO_WINDOW
+            )
+        elif pid:
+            try:
                 d.service.process.kill()
+            except Exception:
+                pass
     except Exception:
         pass
 

@@ -1364,8 +1364,19 @@ class App:
 
     def start_process(self):
         is_allowed = self.access_validator.execute(APP_USERNAME)
+        if is_allowed is None:
+            self.root.after(0, lambda: messagebox.showerror(
+                "Tidak Ada Koneksi",
+                "Gagal terhubung ke server.\n\n"
+                "Pastikan laptop terhubung ke internet, lalu coba jalankan kembali."
+            ))
+            return
         if not is_allowed:
-            self.root.after(0, lambda: messagebox.showerror("Error", "ERROR!"))
+            self.root.after(0, lambda: messagebox.showerror(
+                "Akses Ditolak",
+                "Akun ini tidak memiliki izin untuk menjalankan aplikasi.\n\n"
+                "Hubungi administrator untuk mendapatkan akses."
+            ))
             return
 
         stop_event.clear()
