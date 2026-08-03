@@ -168,32 +168,8 @@ class App:
             text_color=COLORS["sidebar_subtext"]
         ).pack(side="left", anchor="w")
 
-        self.var_master_check = ctk.BooleanVar(value=True)
-        self._master_check_updating = False  # Flag agar master toggle tidak trigger group logic
-
-        def _on_master_check_toggle():
-            val = self.var_master_check.get()
-            self._master_check_updating = True
-            for var in self.step_vars:
-                var.set(val)
-            self._master_check_updating = False
-            self._update_form_visibility()
-
-        self.master_checkbox = ctk.CTkCheckBox(
-            section_header,
-            text="Pilih Semua",
-            variable=self.var_master_check,
-            command=_on_master_check_toggle,
-            font=ctk.CTkFont(family="Helvetica", size=10, weight="bold"),
-            text_color=COLORS["sidebar_subtext"],
-            fg_color=COLORS["switch_on"],
-            hover_color=COLORS["accent_green_hover"],
-            border_color=COLORS["sidebar_subtext"],
-            checkbox_width=16,
-            checkbox_height=16,
-            corner_radius=4
-        )
-        self.master_checkbox.pack(side="right", anchor="e")
+        # Fitur "Pilih Semua" dihapus karena alur kerja sekarang memerlukan
+        # jeda verifikasi manual antara Grup A (Step 1-2) dan Grup B (Step 3-5).
 
         # ── Process Steps ──
         self.step_definitions = [
@@ -226,7 +202,8 @@ class App:
         steps_container.pack(fill="both", expand=True, padx=10)
 
         for i, (label_text, icon) in enumerate(self.step_definitions):
-            step_var = ctk.BooleanVar(value=True)
+            # Semua step default mati; pengguna harus aktifkan grup yang ingin dijalankan
+            step_var = ctk.BooleanVar(value=False)
             self.step_vars.append(step_var)
 
             step_frame = ctk.CTkFrame(steps_container, fg_color="transparent", height=48)
@@ -343,6 +320,9 @@ class App:
         )
         self.entry_data_pegawai, self._frame_data_pegawai = self._create_file_input(
             source_card, "Data Pegawai Excel *", "xlsx", return_container=True
+        )
+        self.entry_rekap_apel_terverif, self._frame_rekap_apel_terverif = self._create_file_input(
+            source_card, "Rekap Apel Terverifikasi *", "xlsx", return_container=True
         )
         self.entry_kalender_json, self._frame_kalender_json = self._create_file_input(
             source_card, "Kalender Kerja Excel (opsional)", "xlsx", return_container=True
@@ -940,15 +920,13 @@ class App:
         Ketika step di satu grup dinyalakan, semua step di grup lain otomatis mati.
         """
         # Safety guard: jangan jalankan jika init belum selesai
-        if not hasattr(self, '_step_groups') or not hasattr(self, '_master_check_updating'):
-            return
-        # Jangan jalankan logika grup saat master checkbox toggle semua sekaligus
-        if self._master_check_updating:
+        if not hasattr(self, '_step_groups'):
             return
 
         is_on = self.step_vars[toggled_index].get()
         if not is_on:
-            # Jika user mematikan step, tidak perlu matikan grup lain
+            # Jika user mematikan step, update form visibility agar field tersembunyi
+            self._update_form_visibility()
             return
 
         my_group = self._index_to_group.get(toggled_index)
@@ -964,10 +942,6 @@ class App:
             if group_name != my_group:
                 for idx in indices:
                     self.step_vars[idx].set(False)
-
-        # Update master checkbox: centang hanya jika SEMUA step hidup
-        all_on = all(var.get() for var in self.step_vars)
-        self.var_master_check.set(all_on)
 
         # Update tampilan form sesuai grup aktif
         self._update_form_visibility()
@@ -997,10 +971,10 @@ class App:
 
         # Mapping: field frame → grup mana saja yang membutuhkannya
         field_visibility = {
-            self._frame_data_pegawai:    ["A", "ALL"],
-            self._frame_template_excel:  ["B", "ALL"],
-            self._frame_kalender_json:   ["B", "ALL"],
-            self._frame_pdf_gabungan:    ["C", "ALL"],
+            self._frame_data_pegawai:          ["A", "ALL"],
+            self._frame_template_excel:        ["B", "ALL"],
+            self._frame_kalender_json:         ["B", "ALL"],
+            self._frame_pdf_gabungan:          ["C", "ALL"],
         }
 
         pack_opts = {"fill": "x", "padx": 18, "pady": (0, 8)}
@@ -1012,6 +986,15 @@ class App:
             else:
                 if frame.winfo_ismapped():
                     frame.pack_forget()
+
+        # Field Rekap Apel Terverifikasi: hanya tampil ketika Step 3 (Analisis) aktif
+        if hasattr(self, '_frame_rekap_apel_terverif') and hasattr(self, 'var_analisis'):
+            if self.var_analisis.get():
+                if not self._frame_rekap_apel_terverif.winfo_ismapped():
+                    self._frame_rekap_apel_terverif.pack(**pack_opts)
+            else:
+                if self._frame_rekap_apel_terverif.winfo_ismapped():
+                    self._frame_rekap_apel_terverif.pack_forget()
 
         # Worker slider: hanya tampil untuk Grup A (Download)
         worker_pack_opts = {"fill": "x", "padx": 18, "pady": (0, 10)}
@@ -1158,94 +1141,33 @@ class App:
                 self.log("── [3/6] Analisis Kehadiran ──")
                 analisis_kehadiran(DIR_REKAP_DITANDATANGANI, excel, output_excel, self.log, json_kalender)
 
-            # GABUNG EKIN & APEL (OTOMATIS TANPA TOGGLE)
-            # Selalu dijalankan jika Analisis Kehadiran aktif atau output_excel ada
-            if self.var_analisis.get() or os.path.exists(output_excel):
+            # GABUNG EKIN & APEL — menggunakan file Rekap Apel yang sudah diverifikasi manual
+            if self.var_analisis.get():
                 if stop_event.is_set():
                     return
-                self.log("  🔗 Menggabungkan Data Ekin & Apel (otomatis)...")
 
-                from utils import sanitize_filename
-                path_ekin_terisi = os.path.join(DIR_REKAP_DITANDATANGANI, sanitize_filename(f"Ekin_Apel_Terisi_{bulan}_{tahun}.xlsx"))
+                rekap_apel_terverif = self.entry_rekap_apel_terverif.get().strip()
 
-                if not os.path.exists(path_ekin_terisi) and excel_pegawai and os.path.exists(excel_pegawai):
-                    try:
-                        from steps.rekap_apel import _baca_data_pegawai
-                        pegawai_list, _ = _baca_data_pegawai(excel_pegawai, self.log)
-                        from openpyxl import Workbook
-                        from openpyxl.styles import Font, Alignment, Border, Side
-
-                        wb_new = Workbook()
-                        ws_new = wb_new.active
-                        ws_new.title = "DISIPLIN"
-
-                        headers_template = ["No.", "Nama Pegawai", "NIP", "Predikat Kinerja", "TMA", "TMA Lain"]
-                        ws_new.append(headers_template)
-
-                        thin_border = Border(
-                            left=Side(style='thin', color='000000'),
-                            right=Side(style='thin', color='000000'),
-                            top=Side(style='thin', color='000000'),
-                            bottom=Side(style='thin', color='000000')
-                        )
-
-                        for col_idx in range(1, 7):
-                            cell = ws_new.cell(row=1, column=col_idx)
-                            cell.font = Font(name="Calibri", size=11, bold=True)
-                            cell.alignment = Alignment(horizontal="center", vertical="center")
-                            cell.border = thin_border
-
-                        seen_nips = set()
-                        no_counter = 1
-                        for p in pegawai_list:
-                            nip_raw = str(p.get("nip", "")).strip()
-                            nip_clean = nip_raw.replace(" ", "").strip()
-                            if not nip_clean or nip_clean.lower() in ["nan", "none", "-", "0"]:
-                                continue
-                            if nip_clean in seen_nips:
-                                continue
-                            seen_nips.add(nip_clean)
-                            nama_val = p.get("nama") or p.get("name") or ""
-                            ws_new.append([no_counter, nama_val, nip_raw, "Baik/Sangat Baik", 0, 0])
-
-                            row_idx = ws_new.max_row
-                            for col_idx in range(1, 7):
-                                c = ws_new.cell(row=row_idx, column=col_idx)
-                                c.font = Font(name="Calibri", size=11)
-                                c.border = thin_border
-                                if col_idx in [1, 5, 6]:
-                                    c.alignment = Alignment(horizontal="center", vertical="center")
-                                else:
-                                    c.alignment = Alignment(horizontal="left", vertical="center")
-                            no_counter += 1
-
-                        for col in ws_new.columns:
-                            max_len = 0
-                            col_letter = col[0].column_letter
-                            for cell in col:
-                                val_str = str(cell.value or "")
-                                if len(val_str) > max_len:
-                                    max_len = len(val_str)
-                            ws_new.column_dimensions[col_letter].width = max(max_len + 4, 12)
-
-                        wb_new.save(path_ekin_terisi)
-                        wb_new.close()
-                    except Exception:
-                        pass
-
-                if os.path.exists(path_ekin_terisi):
-                    status, pesan = merge_ekin_apel(
-                        path_ekin_terisi,
-                        output_excel,
-                        output_template_ready
+                if not rekap_apel_terverif or not os.path.exists(rekap_apel_terverif):
+                    show_err(
+                        "File Rekap Apel Terverifikasi belum dipilih atau tidak ditemukan.\n\n"
+                        "Setelah menjalankan Step 1 & 2, buka file 'Ekin_Apel_Terisi_...xlsx' "
+                        "yang dihasilkan, lakukan verifikasi & koreksi data secara manual, "
+                        "simpan file tersebut, lalu pilih file itu di kolom 'Rekap Apel Terverifikasi'.",
+                        title="Input Rekap Apel Diperlukan"
                     )
-                    self.log(f"  {pesan}")
-                    if not status:
-                        show_err(pesan, title="Error Gabung Ekin & Apel")
-                        return
-                else:
-                    import shutil
-                    shutil.copy(output_excel, output_template_ready)
+                    return
+
+                self.log("  🔗 Menggabungkan Data Ekin & Apel dari file terverifikasi...")
+                status, pesan = merge_ekin_apel(
+                    rekap_apel_terverif,
+                    output_excel,
+                    output_template_ready
+                )
+                self.log(f"  {pesan}")
+                if not status:
+                    show_err(pesan, title="Error Gabung Ekin & Apel")
+                    return
 
             # STEP 4 — MAIL MERGE TPP (Termasuk Generate CSV Otomatis)
             if self.var_mailmerge.get():
