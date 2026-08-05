@@ -86,6 +86,12 @@ def merge_ekin_apel(file_sumber, file_utama, output_path):
 
         wb.save(output_path)
 
+        # Update juga file_utama (Disiplin_TPP.xlsx) agar pengguna melihat perubahan di kedua file
+        try:
+            shutil.copy(output_path, file_utama)
+        except Exception:
+            pass
+
         return True, f"Berhasil update {updated_count} data berdasarkan NIP."
 
     except Exception as e:
