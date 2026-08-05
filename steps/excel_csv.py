@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 
-def recalculate_disiplin_sheet(ws, write_formulas=True):
+def recalculate_disiplin_sheet(ws):
     headers = {}
     for col in range(1, ws.max_column + 1):
         val = ws.cell(1, col).value
@@ -38,6 +38,9 @@ def recalculate_disiplin_sheet(ws, write_formulas=True):
     def set_val(row, name, val):
         c = headers.get(name.lower())
         if c:
+            curr_val = ws.cell(row, c).value
+            if curr_val is not None and str(curr_val).startswith("="):
+                return  # LEAVE THE TEMPLATE'S ORIGINAL FORMULA 100% UNTOUCHED!
             if isinstance(val, float):
                 val = round(val, 2)
                 if val.is_integer():
@@ -166,27 +169,8 @@ def recalculate_disiplin_sheet(ws, write_formulas=True):
         pengurangan_disiplin = tpp_asli - jumlah_tp
         set_val(r, "pengurangan disiplin", pengurangan_disiplin)
 
-        if write_formulas:
-            set_val(r, "TMK Persen", f"=O{r}*2")
-            set_val(r, "TMA Persen", f"=Q{r}*2")
-            set_val(r, "TMA Lain Persen", f"=S{r}*5")
-            set_val(r, "Persen a", f"=U{r}*0.25")
-            set_val(r, "Persen b", f"=W{r}*0.5")
-            set_val(r, "Persen c", f"=Y{r}*1")
-            set_val(r, "Persen d", f"=AA{r}*2.5")
-            set_val(r, "Skor Tidak Disiplin", f"=R{r}+T{r}+V{r}+X{r}+Z{r}+AB{r}")
-            set_val(r, "persentase hadir", f"=IF(AD{r}>0,(AE{r}/AD{r})*100,100)")
-            set_val(r, "Persentase Kinerja", f'=IF(ISNUMBER(SEARCH("butuh",AH{r})),80,IF(ISNUMBER(SEARCH("kurang",AH{r})),IF(ISNUMBER(SEARCH("sangat",AH{r})),40,60),100))')
-            set_val(r, "Skor Kehadiran (%)", f"=(100-AC{r})*0.4")
-            set_val(r, "Skor Kinerja (%)", f"=AG{r}*0.6")
-            set_val(r, "Skor Total (%)", f"=AI{r}+AJ{r}")
-            set_val(r, "Persentase Total", f"=AK{r}-P{r}")
-            set_val(r, "jumlah TP", f"=ROUND((AM{r}/100)*AL{r},0)")
-            set_val(r, "TPP Kotor", f"=AN{r}+AO{r}")
-            set_val(r, "jumlah bersih", f"=AP{r}-AQ{r}-AR{r}")
-            set_val(r, "TPP bersih", f"=AS{r}-AT{r}")
-            set_val(r, "pengurangan disiplin", f"=AL{r}-AN{r}")
-            set_val(r, "jumlah potongan", f"=AQ{r}+AR{r}+AT{r}+AV{r}")
+        jumlah_potongan = pph21 + bpjs + zakat + pengurangan_disiplin
+        set_val(r, "jumlah potongan", jumlah_potongan)
 
 
 def format_rupiah(val):
@@ -274,14 +258,14 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
     release_file_lock_if_needed(output_csv)
 
     from openpyxl import load_workbook
-    wb = load_workbook(file_excel, data_only=False)
+    wb = load_workbook(file_excel, data_only=True)
     sheet_name = "DISIPLIN" if "DISIPLIN" in wb.sheetnames else wb.sheetnames[0]
     ws = wb[sheet_name]
 
-    # 1. Hitung nilai numerik terlebih dahulu untuk ekspor ke DataFrame / CSV
-    recalculate_disiplin_sheet(ws, write_formulas=False)
+    # Hitung nilai numerik di memori (tanpa mengubah rumus di file .xlsx)
+    recalculate_disiplin_sheet(ws)
 
-    # Evaluasi kolom TTE secara presisi per baris berdasarkan Atasan / Penandatangan TTE
+    # Evaluasi kolom TTE untuk CSV
     tte_col = None
     nip_p_col = None
     jab_p_col = None
@@ -311,19 +295,7 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
     headers_list = data_rows[0] if data_rows else []
     df = pd.DataFrame(data_rows[1:], columns=headers_list) if len(data_rows) > 1 else pd.DataFrame()
 
-    # 2. Tulis rumus Excel asli (live formulas) ke worksheet untuk disimpan sebagai file .xlsx
-    recalculate_disiplin_sheet(ws, write_formulas=True)
-
-    try:
-        wb.save(file_excel)
-    except PermissionError:
-        release_file_lock_if_needed(file_excel)
-        try:
-            wb.save(file_excel)
-        except PermissionError:
-            raise Exception(f"File Excel '{os.path.basename(file_excel)}' sedang dibuka di Microsoft Excel atau aplikasi lain. Silakan tutup file tersebut terlebih dahulu.")
-    finally:
-        wb.close()
+    wb.close()
 
     # Format kolom nominal rupiah dengan pemisah titik ribuan (misal 4.949.000)
     currency_cols = [
