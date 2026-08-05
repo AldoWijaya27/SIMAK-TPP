@@ -88,14 +88,14 @@ def recalculate_disiplin_sheet(ws):
         set_val(r, "persentase hadir", persen_hadir)
 
         predikat = str(get_val(r, "Predikat Kinerja", "Baik/Sangat Baik")).strip().lower()
-        if any(w in predikat for w in ["sangat baik", "baik"]):
-            persen_kinerja = 100
+        if "sangat kurang" in predikat:
+            persen_kinerja = 40
+        elif "kurang" in predikat:
+            persen_kinerja = 60
         elif "butuh" in predikat or "perbaikan" in predikat:
             persen_kinerja = 80
-        elif "kurang" in predikat and "sangat" not in predikat:
-            persen_kinerja = 60
-        elif "sangat kurang" in predikat:
-            persen_kinerja = 40
+        elif "sangat baik" in predikat or "baik" in predikat:
+            persen_kinerja = 100
         else:
             persen_kinerja = 100
         set_val(r, "Persentase Kinerja", persen_kinerja)
