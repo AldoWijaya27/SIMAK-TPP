@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 
-def recalculate_disiplin_sheet(ws):
+def recalculate_disiplin_sheet(ws, write_formulas=True):
     headers = {}
     for col in range(1, ws.max_column + 1):
         val = ws.cell(1, col).value
@@ -166,8 +166,26 @@ def recalculate_disiplin_sheet(ws):
         pengurangan_disiplin = tpp_asli - jumlah_tp
         set_val(r, "pengurangan disiplin", pengurangan_disiplin)
 
-        jumlah_potongan = pph21 + bpjs + zakat + pengurangan_disiplin
-        set_val(r, "jumlah potongan", jumlah_potongan)
+        if write_formulas:
+            set_val(r, "TMK Persen", f"=O{r}*2")
+            set_val(r, "TMA Persen", f"=Q{r}*2")
+            set_val(r, "TMA Lain Persen", f"=S{r}*5")
+            set_val(r, "Persen a", f"=U{r}*0.25")
+            set_val(r, "Persen b", f"=W{r}*0.5")
+            set_val(r, "Persen c", f"=Y{r}*1")
+            set_val(r, "Persen d", f"=AA{r}*2.5")
+            set_val(r, "Skor Tidak Disiplin", f"=R{r}+T{r}+V{r}+X{r}+Z{r}+AB{r}")
+            set_val(r, "persentase hadir", f"=IF(AD{r}>0,(AE{r}/AD{r})*100,100)")
+            set_val(r, "Skor Kehadiran (%)", f"=(100-AC{r})*0.4")
+            set_val(r, "Skor Kinerja (%)", f"=AG{r}*0.6")
+            set_val(r, "Skor Total (%)", f"=AI{r}+AJ{r}")
+            set_val(r, "Persentase Total", f"=AK{r}-P{r}")
+            set_val(r, "jumlah TP", f"=ROUND((AM{r}/100)*AL{r},0)")
+            set_val(r, "TPP Kotor", f"=AN{r}+AO{r}")
+            set_val(r, "jumlah bersih", f"=AP{r}-AQ{r}-AR{r}")
+            set_val(r, "TPP bersih", f"=AS{r}-AT{r}")
+            set_val(r, "pengurangan disiplin", f"=AL{r}-AN{r}")
+            set_val(r, "jumlah potongan", f"=AQ{r}+AR{r}+AT{r}+AV{r}")
 
 
 def format_rupiah(val):
@@ -255,37 +273,14 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
     release_file_lock_if_needed(output_csv)
 
     from openpyxl import load_workbook
-
-    # 1. Simpan nilai ter-evaluasi (cached value) sebelum file dibuka dalam mode rumus
-    cached_values = {}
-    try:
-        wb_data = load_workbook(file_excel, data_only=True)
-        sheet_data_name = "DISIPLIN" if "DISIPLIN" in wb_data.sheetnames else wb_data.sheetnames[0]
-        ws_data = wb_data[sheet_data_name]
-        for r in range(1, ws_data.max_row + 1):
-            for c in range(1, ws_data.max_column + 1):
-                val_c = ws_data.cell(r, c).value
-                if val_c is not None:
-                    cached_values[(r, c)] = val_c
-        wb_data.close()
-    except Exception:
-        pass
-
-    # 2. Buka workbook untuk rekalkulasi disiplin
     wb = load_workbook(file_excel, data_only=False)
     sheet_name = "DISIPLIN" if "DISIPLIN" in wb.sheetnames else wb.sheetnames[0]
     ws = wb[sheet_name]
 
-    recalculate_disiplin_sheet(ws)
+    # 1. Hitung nilai numerik terlebih dahulu untuk ekspor ke DataFrame / CSV
+    recalculate_disiplin_sheet(ws, write_formulas=False)
 
-    # 3. Kembalikan nilai ter-evaluasi untuk sel berbasis rumus agar tidak hilang saat di-save
-    for (r, c), val_c in cached_values.items():
-        if r <= ws.max_row and c <= ws.max_column:
-            curr_val = ws.cell(r, c).value
-            if curr_val is None or str(curr_val).startswith("="):
-                ws.cell(r, c).value = val_c
-
-    # 4. Evaluasi kolom TTE secara presisi per baris berdasarkan Atasan / Penandatangan TTE
+    # Evaluasi kolom TTE secara presisi per baris berdasarkan Atasan / Penandatangan TTE
     tte_col = None
     nip_p_col = None
     jab_p_col = None
@@ -310,6 +305,14 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
             else:
                 ws.cell(r, tte_col).value = ""
 
+    # Ambil nilai numerik untuk DataFrame CSV
+    data_rows = list(ws.values)
+    headers_list = data_rows[0] if data_rows else []
+    df = pd.DataFrame(data_rows[1:], columns=headers_list) if len(data_rows) > 1 else pd.DataFrame()
+
+    # 2. Tulis rumus Excel asli (live formulas) ke worksheet untuk disimpan sebagai file .xlsx
+    recalculate_disiplin_sheet(ws, write_formulas=True)
+
     try:
         wb.save(file_excel)
     except PermissionError:
@@ -320,9 +323,6 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
             raise Exception(f"File Excel '{os.path.basename(file_excel)}' sedang dibuka di Microsoft Excel atau aplikasi lain. Silakan tutup file tersebut terlebih dahulu.")
     finally:
         wb.close()
-
-    # Baca sheet "DISIPLIN" dari excel dan ekspor ke CSV
-    df = pd.read_excel(file_excel, sheet_name=sheet_name)
 
     # Format kolom nominal rupiah dengan pemisah titik ribuan (misal 4.949.000)
     currency_cols = [
