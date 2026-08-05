@@ -280,6 +280,9 @@ def analisis_kehadiran(dir_rekap, template_excel, output_excel, log, json_kalend
 
             ws.cell(row, map_col["HariKerja"]).value = data["HariKerja"]
 
+    from steps.excel_csv import recalculate_disiplin_sheet
+    recalculate_disiplin_sheet(ws, write_formulas=True)
+
     log(f"Menulis dan menyimpan hasil ke Excel: {output_excel}")
     wb.save(output_excel)
     wb.close()

@@ -176,6 +176,7 @@ def recalculate_disiplin_sheet(ws, write_formulas=True):
             set_val(r, "Persen d", f"=AA{r}*2.5")
             set_val(r, "Skor Tidak Disiplin", f"=R{r}+T{r}+V{r}+X{r}+Z{r}+AB{r}")
             set_val(r, "persentase hadir", f"=IF(AD{r}>0,(AE{r}/AD{r})*100,100)")
+            set_val(r, "Persentase Kinerja", f'=IF(ISNUMBER(SEARCH("butuh",AH{r})),80,IF(ISNUMBER(SEARCH("kurang",AH{r})),IF(ISNUMBER(SEARCH("sangat",AH{r})),40,60),100))')
             set_val(r, "Skor Kehadiran (%)", f"=(100-AC{r})*0.4")
             set_val(r, "Skor Kinerja (%)", f"=AG{r}*0.6")
             set_val(r, "Skor Total (%)", f"=AI{r}+AJ{r}")
