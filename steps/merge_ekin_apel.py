@@ -79,8 +79,11 @@ def merge_ekin_apel(file_sumber, file_utama, output_path):
                 updated_count += 1
 
         # ==========================================================
-        # 6️⃣ Simpan file (struktur tetap aman)
+        # 6️⃣ Rekalkulasi seluruh persentase & nominal TPP otomatis
         # ==========================================================
+        from steps.excel_csv import recalculate_disiplin_sheet
+        recalculate_disiplin_sheet(ws)
+
         wb.save(output_path)
 
         return True, f"Berhasil update {updated_count} data berdasarkan NIP."
