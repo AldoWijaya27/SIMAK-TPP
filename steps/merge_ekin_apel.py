@@ -3,6 +3,24 @@ from openpyxl import load_workbook
 import shutil
 
 
+def clean_nip(val):
+    if val is None or pd.isna(val):
+        return ""
+    if isinstance(val, float):
+        val = f"{val:.0f}"
+    import re
+    s = str(val).strip()
+    return re.sub(r"\D", "", s)
+
+
+def clean_name(val):
+    if not val or pd.isna(val):
+        return ""
+    import re
+    s = re.sub(r"[.,]", "", str(val)).upper()
+    return re.sub(r"\s+", " ", s).strip()
+
+
 def merge_ekin_apel(file_sumber, file_utama, output_path):
     try:
         shutil.copy(file_utama, output_path)
@@ -14,16 +32,26 @@ def merge_ekin_apel(file_sumber, file_utama, output_path):
             if col not in df_sumber.columns:
                 raise ValueError(f"Kolom '{col}' tidak ditemukan di file sumber.")
 
-        # Buat mapping berdasarkan NIP (tahan terhadap NIP ganda atau kosong)
-        mapping = {}
+        # Buat mapping berdasarkan NIP murni & Nama murni (sebagai fallback)
+        mapping_nip = {}
+        mapping_nama = {}
+
+        col_nama_sumber = "NAMA" if "NAMA" in df_sumber.columns else ("Nama" if "Nama" in df_sumber.columns else None)
+
         for _, row in df_sumber.iterrows():
-            nip_val = str(row["NIP"]).replace(" ", "").strip()
-            if nip_val and nip_val.lower() not in ["nan", "none", "-", "0"]:
-                mapping[nip_val] = {
-                    "Predikat Kinerja": row["Predikat Kinerja"],
-                    "TMA": row["TMA"],
-                    "TMA Lain": row["TMA Lain"]
-                }
+            nip_clean = clean_nip(row["NIP"])
+            data_dict = {
+                "Predikat Kinerja": row["Predikat Kinerja"],
+                "TMA": row["TMA"],
+                "TMA Lain": row["TMA Lain"]
+            }
+            if nip_clean and len(nip_clean) >= 5:
+                mapping_nip[nip_clean] = data_dict
+
+            if col_nama_sumber:
+                nama_clean = clean_name(row[col_nama_sumber])
+                if nama_clean:
+                    mapping_nama[nama_clean] = data_dict
 
         # ==========================================================
         # 3️⃣ Load file output pakai openpyxl (bukan pandas!)
@@ -55,36 +83,44 @@ def merge_ekin_apel(file_sumber, file_utama, output_path):
             raise ValueError("Kolom 'TMA Lain' tidak ditemukan di file utama.")
 
         col_nip = headers["NIP"]
+        col_nama = headers.get("NAMA") or headers.get("Nama")
         col_predikat = headers["Predikat Kinerja"]
         col_tma = headers["TMA"]
         col_tma_lain = headers["TMA Lain"]
 
         # ==========================================================
-        # 5️⃣ Update nilai berdasarkan NIP (tanpa merusak rumus lain)
+        # 5️⃣ Update nilai berdasarkan NIP / Nama (tanpa merusak rumus lain)
         # ==========================================================
         updated_count = 0
 
         for row in range(2, ws.max_row + 1):
             nip_cell = ws.cell(row=row, column=col_nip).value
+            nip_clean = clean_nip(nip_cell)
 
-            if nip_cell is None:
-                continue
+            target_data = None
+            if nip_clean in mapping_nip:
+                target_data = mapping_nip[nip_clean]
+            elif col_nama:
+                nama_cell = ws.cell(row=row, column=col_nama).value
+                nama_clean = clean_name(nama_cell)
+                if nama_clean in mapping_nama:
+                    target_data = mapping_nama[nama_clean]
 
-            nip_clean = str(nip_cell).replace(" ", "").strip()
-
-            if nip_clean in mapping:
-                ws.cell(row=row, column=col_predikat).value = mapping[nip_clean]["Predikat Kinerja"]
-                ws.cell(row=row, column=col_tma).value = mapping[nip_clean]["TMA"]
-                ws.cell(row=row, column=col_tma_lain).value = mapping[nip_clean]["TMA Lain"]
+            if target_data:
+                ws.cell(row=row, column=col_predikat).value = target_data["Predikat Kinerja"]
+                ws.cell(row=row, column=col_tma).value = target_data["TMA"]
+                ws.cell(row=row, column=col_tma_lain).value = target_data["TMA Lain"]
                 updated_count += 1
 
-        # ==========================================================
-        # 6️⃣ Rekalkulasi seluruh persentase & nominal TPP otomatis
-        # ==========================================================
-        from steps.excel_csv import recalculate_disiplin_sheet
-        recalculate_disiplin_sheet(ws)
-
+        # Save file setelah update data NIP
         wb.save(output_path)
+        wb.close()
+
+        # ==========================================================
+        # 6️⃣ Rekalkulasi seluruh rumus resmi menggunakan Microsoft Excel background
+        # ==========================================================
+        from steps.excel_csv import recalculate_excel_via_win32
+        recalculate_excel_via_win32(output_path)
 
         # Update juga file_utama (Disiplin_TPP.xlsx) agar pengguna melihat perubahan di kedua file
         try:

@@ -1,176 +1,42 @@
 import os
 import pandas as pd
 
+def recalculate_excel_via_win32(file_path):
+    """
+    Meminta Microsoft Excel (via COM API Windows) untuk menghitung dan menyimpan 
+    seluruh rumus asli di dalam file .xlsx secara otomatis di background.
+    """
+    import sys, os
+    if sys.platform != "win32" or not os.path.exists(file_path):
+        return False
+    try:
+        import pythoncom
+        import win32com.client as win32
+        
+        pythoncom.CoInitialize()
+        excel = win32.DispatchEx("Excel.Application")
+        excel.Visible = False
+        excel.DisplayAlerts = False
+        
+        abs_path = os.path.abspath(file_path)
+        wb = excel.Workbooks.Open(abs_path)
+        wb.Save()
+        wb.Close()
+        excel.Quit()
+        pythoncom.CoUninitialize()
+        return True
+    except Exception as e:
+        print(f"Peringatan: Recalculate via Win32 Excel gagal/skip: {e}")
+        return False
+
+
 def recalculate_disiplin_sheet(ws):
-    headers = {}
-    for col in range(1, ws.max_column + 1):
-        val = ws.cell(1, col).value
-        if val:
-            headers[str(val).strip().lower()] = col
+    """
+    Fungsi ini dulunya menghitung ulang rumus secara hardcode di Python.
+    Sekarang di-bypass agar 100% menggunakan hasil rumus murni dari Microsoft Excel.
+    """
+    pass
 
-    def get_val(row, name, default=0):
-        c = headers.get(name.lower())
-        if not c:
-            return default
-        v = ws.cell(row, c).value
-        if v is None or str(v).startswith("="):
-            return default
-        if isinstance(v, (int, float)):
-            return float(v)
-
-        s = str(v).strip()
-        import re
-        s = re.sub(r"(?i)rp\.?\s*", "", s)
-        if "." in s and "," in s:
-            s = s.replace(".", "").replace(",", ".")
-        elif "." in s:
-            parts = s.split(".")
-            if len(parts) > 2 or (len(parts) == 2 and len(parts[1]) == 3 and parts[0].isdigit()):
-                s = s.replace(".", "")
-        elif "," in s:
-            s = s.replace(",", ".")
-
-        try:
-            return float(s)
-        except (ValueError, TypeError):
-            return str(v)
-
-    def set_val(row, name, val):
-        c = headers.get(name.lower())
-        if c:
-            curr_val = ws.cell(row, c).value
-            if curr_val is not None and str(curr_val).startswith("="):
-                return  # LEAVE THE TEMPLATE'S ORIGINAL FORMULA 100% UNTOUCHED!
-            if isinstance(val, float):
-                val = round(val, 2)
-                if val.is_integer():
-                    val = int(val)
-            ws.cell(row, c).value = val
-
-    for r in range(2, ws.max_row + 1):
-        nama = get_val(r, "NAMA", "")
-        if not nama or str(nama).strip() == "":
-            continue
-
-        tmk = get_val(r, "TMK", 0)
-        tmk_persen = tmk * 2
-        set_val(r, "TMK Persen", tmk_persen)
-
-        tma = get_val(r, "TMA", 0)
-        tma_persen = tma * 2
-        set_val(r, "TMA Persen", tma_persen)
-
-        tma_lain = get_val(r, "TMA Lain", 0)
-        tma_lain_persen = tma_lain * 5
-        set_val(r, "TMA Lain Persen", tma_lain_persen)
-
-        p15 = get_val(r, "< 15 menit", 0)
-        persen_a = p15 * 0.25
-        set_val(r, "Persen a", persen_a)
-
-        p30 = get_val(r, "< 30 menit", 0)
-        persen_b = p30 * 0.5
-        set_val(r, "Persen b", persen_b)
-
-        p60 = get_val(r, "< 60 menit", 0)
-        persen_c = p60 * 1.0
-        set_val(r, "Persen c", persen_c)
-
-        p60_gt = get_val(r, "> 60 menit", 0)
-        persen_d = p60_gt * 2.5
-        set_val(r, "Persen d", persen_d)
-
-        skor_tdk_disiplin = tma_persen + tma_lain_persen + persen_a + persen_b + persen_c + persen_d
-        set_val(r, "Skor Tidak Disiplin", skor_tdk_disiplin)
-
-        total_hk = get_val(r, "Total HK", 0)
-        hadir_hk = total_hk
-        set_val(r, "Hadir HK", hadir_hk)
-
-        persen_hadir = (hadir_hk / total_hk * 100) if total_hk > 0 else 100
-        set_val(r, "persentase hadir", persen_hadir)
-
-        predikat = str(get_val(r, "Predikat Kinerja", "Baik/Sangat Baik")).strip().lower()
-        if "sangat kurang" in predikat:
-            persen_kinerja = 40
-        elif "kurang" in predikat:
-            persen_kinerja = 60
-        elif "butuh" in predikat or "perbaikan" in predikat:
-            persen_kinerja = 80
-        elif "sangat baik" in predikat or "baik" in predikat:
-            persen_kinerja = 100
-        else:
-            persen_kinerja = 100
-        set_val(r, "Persentase Kinerja", persen_kinerja)
-
-        skor_kehadiran = (100 - skor_tdk_disiplin) * 0.40
-        set_val(r, "Skor Kehadiran (%)", skor_kehadiran)
-
-        skor_kinerja = persen_kinerja * 0.60
-        set_val(r, "Skor Kinerja (%)", skor_kinerja)
-
-        skor_total = skor_kehadiran + skor_kinerja
-        set_val(r, "Skor Total (%)", skor_total)
-
-        # Bulatkan rupiah ke integer utuh agar seluruh nominal TPP bersih tanpa koma desimal
-        tpp_asli = round(get_val(r, "TPP Asli", 0))
-        set_val(r, "TPP Asli", tpp_asli)
-
-        persen_total = round(skor_total - tmk_persen, 2)
-        set_val(r, "Persentase Total", persen_total)
-
-        jumlah_tp = round((persen_total / 100.0) * tpp_asli)
-        set_val(r, "jumlah TP", jumlah_tp)
-
-        tambahan_20 = round(get_val(r, "Tambahan 20%", 0))
-        tpp_kotor = jumlah_tp + tambahan_20
-        set_val(r, "TPP Kotor", tpp_kotor)
-
-        gol = str(get_val(r, "GOLONGAN", "")).strip().upper()
-        if "IV" in gol:
-            pph21 = round(tpp_kotor * 0.15)
-        elif "III" in gol:
-            pph21 = round(tpp_kotor * 0.05)
-        else:
-            pph21 = 0
-        set_val(r, "PPh21", pph21)
-
-        bpjs = round(get_val(r, "BPJS", 0))
-        set_val(r, "BPJS", bpjs)
-
-        jumlah_bersih = tpp_kotor - pph21 - bpjs
-        set_val(r, "jumlah bersih", jumlah_bersih)
-
-        if jumlah_bersih <= 0:
-            zakat = 0
-        else:
-            jabatan = str(get_val(r, "JABATAN", "")).strip().lower()
-            keywords_zakat = [
-                "ahli pertama", "mahir", "penyelia", "terampil",
-                "penelaah teknis", "penata kelola", "pengolah",
-                "pengadministrasi", "operator"
-            ]
-            if any(kw in jabatan for kw in keywords_zakat):
-                if "IV" in gol:
-                    zakat = 50000
-                elif "III" in gol:
-                    zakat = 30000
-                elif "II" in gol:
-                    zakat = 20000
-                else:
-                    zakat = round(jumlah_bersih * 0.025)
-            else:
-                zakat = round(jumlah_bersih * 0.025)
-        set_val(r, "zakat", zakat)
-
-        tpp_bersih = jumlah_bersih - zakat
-        set_val(r, "TPP bersih", tpp_bersih)
-
-        pengurangan_disiplin = tpp_asli - jumlah_tp
-        set_val(r, "pengurangan disiplin", pengurangan_disiplin)
-
-        jumlah_potongan = pph21 + bpjs + zakat + pengurangan_disiplin
-        set_val(r, "jumlah potongan", jumlah_potongan)
 
 
 def format_rupiah(val):
@@ -257,13 +123,14 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
     release_file_lock_if_needed(file_excel)
     release_file_lock_if_needed(output_csv)
 
+    # Hitung dan simpan seluruh rumus resmi menggunakan Microsoft Excel background
+    recalculate_excel_via_win32(file_excel)
+
     from openpyxl import load_workbook
     wb = load_workbook(file_excel, data_only=True)
     sheet_name = "DISIPLIN" if "DISIPLIN" in wb.sheetnames else wb.sheetnames[0]
     ws = wb[sheet_name]
 
-    # Hitung nilai numerik di memori (tanpa mengubah rumus di file .xlsx)
-    recalculate_disiplin_sheet(ws)
 
     # Evaluasi kolom TTE untuk CSV
     tte_col = None
@@ -290,12 +157,34 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
             else:
                 ws.cell(r, tte_col).value = ""
 
+    # Catat indeks baris yang berwarna hijau (absensi ter-download/terproses)
+    valid_data_indices = set()
+    for r in range(2, ws.max_row + 1):
+        is_green = False
+        for c in range(1, min(ws.max_column + 1, 10)):
+            fill = ws.cell(r, c).fill
+            if fill and fill.fill_type == "solid" and fill.start_color:
+                color_str = str(getattr(fill.start_color, "rgb", "") or "").upper()
+                if "E2EFDA" in color_str:
+                    is_green = True
+                    break
+        if is_green:
+            valid_data_indices.add(r - 2)  # index 0-based untuk DataFrame (karena data_rows[1:])
+
     # Ambil nilai numerik untuk DataFrame CSV
     data_rows = list(ws.values)
     headers_list = data_rows[0] if data_rows else []
     df = pd.DataFrame(data_rows[1:], columns=headers_list) if len(data_rows) > 1 else pd.DataFrame()
 
     wb.close()
+
+    # Filter DataFrame CSV: Hanya sertakan pegawai yang barisnya berwarna hijau (absensi terproses)
+    if not df.empty and valid_data_indices:
+        valid_indices_in_df = [idx for idx in range(len(df)) if idx in valid_data_indices]
+        if valid_indices_in_df:
+            df = df.iloc[valid_indices_in_df].copy()
+
+
 
     # Format kolom nominal rupiah dengan pemisah titik ribuan (misal 4.949.000)
     currency_cols = [

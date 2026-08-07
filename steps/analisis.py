@@ -13,6 +13,13 @@ from steps.work_calendar import WorkCalendar, parse_tanggal_indonesia
 # =========================================================
 # FUNGSI GLOBAL (WAJIB DI LUAR)
 # =========================================================
+def clean_name(val):
+    if not val:
+        return ""
+    s = re.sub(r"[.,]", "", str(val)).upper()
+    return re.sub(r"\s+", " ", s).strip()
+
+
 def klasifikasi_keterlambatan(jam, tanggal, kalender):
 
     if not jam or not tanggal:
@@ -195,7 +202,7 @@ def analisis_kehadiran(dir_rekap, template_excel, output_excel, log, json_kalend
                 if kategori:
                     keterlambatan[kategori] += 1
 
-            hasil_rekap[nama] = {
+            data_dict = {
                 "<15": keterlambatan["<15"],
                 "<30": keterlambatan["<30"],
                 "<60": keterlambatan["<60"],
@@ -203,6 +210,10 @@ def analisis_kehadiran(dir_rekap, template_excel, output_excel, log, json_kalend
                 "TMK": tmk,
                 "HariKerja": len(tanggal_unik)
             }
+            hasil_rekap[nama.strip()] = data_dict
+            c_name = clean_name(nama)
+            if c_name:
+                hasil_rekap[c_name] = data_dict
 
     # =====================================================
     # TULIS EXCEL
@@ -252,7 +263,8 @@ def analisis_kehadiran(dir_rekap, template_excel, output_excel, log, json_kalend
         "HariKerja": kolom.get("Total HK")
     }
 
-    red = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+    green_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+    red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
     border = Border(
         left=Side(border_style="thin", color="000000"),
         right=Side(border_style="thin", color="000000"),
@@ -265,16 +277,27 @@ def analisis_kehadiran(dir_rekap, template_excel, output_excel, log, json_kalend
         if not nama:
             continue
 
-        nama = nama.strip()
-        if nama in hasil_rekap:
-            data = hasil_rekap[nama]
+        nama_raw = str(nama).strip()
+        nama_clean = clean_name(nama_raw)
+
+        data = None
+        if nama_raw in hasil_rekap:
+            data = hasil_rekap[nama_raw]
+        elif nama_clean in hasil_rekap:
+            data = hasil_rekap[nama_clean]
+
+        if data:
+
+            # Warnai seluruh sel di baris ini dengan hijau muda sebagai penanda absensi terproses
+            for col in range(1, ws.max_column + 1):
+                ws.cell(row=row, column=col).fill = green_fill
 
             for k in ["<15", "<30", "<60", ">60", "TMK"]:
-                ws.cell(row, map_col[k]).value = data[k]
                 cell = ws.cell(row, map_col[k])
+                cell.value = data[k]
 
                 if data[k] > 0:
-                    cell.fill = red
+                    cell.fill = red_fill
 
                 cell.border = border
 
