@@ -72,21 +72,7 @@ def analisis_kehadiran(dir_rekap, template_excel, output_excel, log, json_kalend
         except:
             return True
     
-    def durasi_adalah_nol(isi):
 
-        # contoh pada PDF: 6.5   0,00   0.00
-        durasi_match = re.findall(r"\d{1,2}[.,]\d{1,2}", isi)
-
-        if not durasi_match:
-            return True  # tidak ada durasi → anggap tidak hadir
-
-        # biasanya angka terakhir adalah durasi kerja
-        durasi_str = durasi_match[-1].replace(",", ".")
-
-        try:
-            return float(durasi_str) == 0.0
-        except:
-            return True
         
     # === BACA PDF ===
     hasil_rekap = {}
@@ -183,9 +169,7 @@ def analisis_kehadiran(dir_rekap, template_excel, output_excel, log, json_kalend
                     tmk += 1
                     continue
 
-                if durasi_adalah_nol(isi):
-                    tmk += 1
-                    continue
+
 
                 # =================================================
                 # HITUNG KETERLAMBATAN BERDASARKAN KALENDER
