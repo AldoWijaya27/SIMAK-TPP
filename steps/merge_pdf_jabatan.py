@@ -15,13 +15,13 @@ KELOMPOK_PIMPINAN = [
     ("Sekretaris",   "SEKRETARIS",                   "Merge_Pejabat_Sekretaris"),
 ]
 
-# Legacy constants — dipertahankan agar split_pdf_jabatan.py tidak error import
-KELOMPOK_JABATAN = [
-    ("Kepala Bidang", ["kepala bidang"]),
-    ("Kepala UPTD",   ["kepala uptd"]),
-    ("Sekretaris",    ["sekretaris"]),
-    ("Madya",         ["madya"]),
-]
+# # Legacy constants — dipertahankan agar split_pdf_jabatan.py tidak error import
+# KELOMPOK_JABATAN = [
+#     ("Kepala Bidang", ["kepala bidang"]),
+#     ("Kepala UPTD",   ["kepala uptd"]),
+#     ("Sekretaris",    ["sekretaris"]),
+#     ("Madya",         ["madya"]),
+# ]
 NAMA_FILE_OUTPUT = "Merge_Pejabat"
 
 
