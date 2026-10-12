@@ -172,7 +172,7 @@ def get_driver():
             })
             
             # Pindah ke domain root dulu agar selenium mengizinkan injeksi cookies
-            driver.get("https://dev1.sikap.lampungprov.go.id/favicon.ico")
+            driver.get("https://sikap.lampungprov.go.id/favicon.ico")
             
             global shared_cookies
             for cookie in shared_cookies:
@@ -318,7 +318,7 @@ def download_rekap(excel_pegawai, dir_rekap, bulan, tahun, log, max_workers=5):
         log("Tidak ada data pegawai untuk didownload.")
         return
 
-    BASE_URL = f"https://dev1.sikap.lampungprov.go.id/app/cetak-laporan/data-harian-bulanan-pegawai?bulan={bulan}&tahun={tahun}&id_peg={{id}}"
+    BASE_URL = f"https://sikap.lampungprov.go.id/app/cetak-laporan/data-harian-bulanan-pegawai?bulan={bulan}&tahun={tahun}&id_peg={{id}}"
     
     # Login menggunakan pegawai pertama
     first_url = BASE_URL.format(id=items[0]["id"])
