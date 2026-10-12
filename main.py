@@ -6,6 +6,15 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 if CURRENT_DIR not in sys.path:
     sys.path.insert(0, CURRENT_DIR)
+
+# Pastikan path browser Playwright terarah dengan benar jika berjalan sebagai exe
+if getattr(sys, 'frozen', False):
+    if 'PLAYWRIGHT_BROWSERS_PATH' not in os.environ:
+        local_appdata = os.environ.get('LOCALAPPDATA', '')
+        if local_appdata:
+            pw_cache = os.path.join(local_appdata, 'ms-playwright')
+            if os.path.isdir(pw_cache):
+                os.environ['PLAYWRIGHT_BROWSERS_PATH'] = pw_cache
 # ==================================================
 
 import customtkinter as ctk

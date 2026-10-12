@@ -1,6 +1,8 @@
 import requests
 import time
 import os
+import sys
+import subprocess
 import pandas as pd
 import concurrent.futures
 from playwright.sync_api import sync_playwright
@@ -31,6 +33,8 @@ PERIODE_SKP_MAP = {
 
 def get_app_dir():
     """Mendapatkan direktori dasar aplikasi."""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
     return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 def download_skp(skp_id, periode, output_filename, auth_token, label="", tanggal_pegawai=None, log=print):
@@ -99,9 +103,95 @@ def download_skp(skp_id, periode, output_filename, auth_token, label="", tanggal
         log(f"{prefix}❌ Terjadi kesalahan saat download dokumen: {e}")
         return False
 
+def setup_playwright_env():
+    """Memastikan path browser Playwright terkonfigurasi dengan benar di environment PyInstaller / Windows."""
+    if getattr(sys, "frozen", False):
+        if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
+            local_appdata = os.environ.get("LOCALAPPDATA", "")
+            if local_appdata:
+                user_pw_dir = os.path.join(local_appdata, "ms-playwright")
+                if os.path.isdir(user_pw_dir):
+                    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = user_pw_dir
+
+def install_playwright_chromium(log=print):
+    """Mengunduh browser Chromium menggunakan CLI Playwright bawaan jika tidak ada browser lain yang tersedia."""
+    try:
+        from playwright._impl._driver import compute_driver_executable
+
+        node, cli = compute_driver_executable()
+        env = os.environ.copy()
+        local_appdata = os.environ.get("LOCALAPPDATA", "")
+        if local_appdata:
+            user_pw_dir = os.path.join(local_appdata, "ms-playwright")
+            env["PLAYWRIGHT_BROWSERS_PATH"] = user_pw_dir
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = user_pw_dir
+
+        log("  📥 Sedang mengunduh browser Chromium untuk Playwright (~150MB). Mohon tunggu...")
+        proc = subprocess.run([node, cli, "install", "chromium"], env=env, capture_output=True, text=True)
+        if proc.returncode == 0:
+            log("  ✅ Berhasil mengunduh browser Chromium.")
+            return True
+        else:
+            err_msg = proc.stderr.strip() or proc.stdout.strip()
+            log(f"  ❌ Gagal mengunduh Chromium: {err_msg}")
+            return False
+    except Exception as e:
+        log(f"  ❌ Error saat instalasi browser Chromium: {e}")
+        return False
+
+def launch_browser_context(p, user_data_dir, log=print):
+    """
+    Meluncurkan persistent browser context dengan prioritas:
+    1. Google Chrome (channel='chrome') - browser utama jika terpasang di sistem
+    2. Microsoft Edge (channel='msedge') - browser bawaan Windows 10 & 11
+    3. Chromium bawaan Playwright (channel=None)
+    4. Auto-download Chromium jika belum ada browser yang bisa dipakai
+    """
+    setup_playwright_env()
+    channels = [
+        ("chrome", "Google Chrome"),
+        ("msedge", "Microsoft Edge"),
+        (None, "Chromium (Playwright)")
+    ]
+
+    last_error = None
+    for channel, browser_name in channels:
+        try:
+            kwargs = {
+                "user_data_dir": user_data_dir,
+                "headless": False,
+                "viewport": {"width": 1280, "height": 720}
+            }
+            if channel:
+                kwargs["channel"] = channel
+
+            ctx = p.chromium.launch_persistent_context(**kwargs)
+            log(f"  Browser berhasil dibuka ({browser_name}).")
+            return ctx
+        except Exception as e:
+            last_error = e
+            continue
+
+    # Jika semua browser di atas tidak ditemukan, coba unduh Chromium otomatis
+    log("  ⚠ Browser Google Chrome & Microsoft Edge tidak dapat diluncurkan. Mencoba mengunduh Chromium...")
+    if install_playwright_chromium(log=log):
+        try:
+            ctx = p.chromium.launch_persistent_context(
+                user_data_dir=user_data_dir,
+                headless=False,
+                viewport={"width": 1280, "height": 720}
+            )
+            log("  Browser berhasil dibuka (Chromium terinstal).")
+            return ctx
+        except Exception as e:
+            last_error = e
+
+    log(f"❌ Gagal meluncurkan browser: {last_error}")
+    return None
+
 def dapatkan_token_otomatis(label, log=print):
     log(f"── Otentikasi Akun {label.upper()} ──")
-    log(f"  Membuka browser Playwright untuk {label}...")
+    log(f"  Membuka browser untuk {label}...")
     log("  Jika belum login, silakan login di browser. Browser otomatis tertutup begitu token didapatkan.")
 
     token = None
@@ -115,14 +205,8 @@ def dapatkan_token_otomatis(label, log=print):
             user_data_dir = alt_path
 
     with sync_playwright() as p:
-        try:
-            context = p.chromium.launch_persistent_context(
-                user_data_dir=user_data_dir,
-                headless=False,
-                viewport={'width': 1280, 'height': 720}
-            )
-        except Exception as e:
-            log(f"❌ Gagal meluncurkan browser untuk {label}: {e}")
+        context = launch_browser_context(p, user_data_dir, log=log)
+        if not context:
             return None
 
         page = context.pages[0] if context.pages else context.new_page()
