@@ -11,17 +11,34 @@ from steps.download import stop_event
 LOKASI = "BANDAR LAMPUNG"
 TANGGAL_PEGAWAI = "2026-10-01"
 PERIODE_KONSTAN = "2026-490b2797ecac489cb01f6cf6712de843"
+
+PERIODE_SKP_MAP = {
+    "JANUARI": "b8bada1f688d42039644033e0a2a080d",
+    "FEBRUARI": "5eb30cf66faf4a14a2635783244636ee",
+    "MARET": "eadc309311d94d1c9b6d15d6730ed141",
+    "APRIL": "42d3774d8dbe4ad0b56f6b8e054ec4f9",
+    "MEI": "7a79e16dc8ef4776a8edb7c50fa94376",
+    "JUNI": "feb0ac042e704052b67c4b7ba4bb2348",
+    "JULI": "3d11a771e5114e3daef8c5a19dec8db2",
+    "AGUSTUS": "fbbf789c6ba24ea38bf65a068c6130f6",
+    "SEPTEMBER": "490b2797ecac489cb01f6cf6712de843",
+    "OKTOBER": "4ff8e27d772846f9a9ae745485632292",
+    "NOVEMBER": "4aa160f44f284dc89a4ad3e8f1f35c15",
+    "DESEMBER": "1f4638b5a7a24046a2e85887254b4d8e",
+    "PENILAIAN AKHIR": "dd11363dac0047e18ea9c3787200ec79",
+}
 # --------------------------
 
 def get_app_dir():
     """Mendapatkan direktori dasar aplikasi."""
     return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-def download_skp(skp_id, periode, output_filename, auth_token, label="", log=print):
+def download_skp(skp_id, periode, output_filename, auth_token, label="", tanggal_pegawai=None, log=print):
     if stop_event.is_set():
         return False
 
     prefix = f"[{label}] " if label else ""
+    tgl_peg = tanggal_pegawai if tanggal_pegawai else TANGGAL_PEGAWAI
     headers = {
         "Authorization": auth_token,
         "Content-Type": "application/json",
@@ -39,7 +56,7 @@ def download_skp(skp_id, periode, output_filename, auth_token, label="", log=pri
         "lokasi": LOKASI,
         "periode": periode,
         "skp_id": skp_id,
-        "tanggal_pegawai": TANGGAL_PEGAWAI
+        "tanggal_pegawai": tgl_peg
     }
 
     try:
@@ -145,13 +162,18 @@ def dapatkan_token_otomatis(label, log=print):
 
     return token
 
-def run_download_skp(excel_file, folder_output, log=print):
+def run_download_skp(excel_file, folder_output, log=print, periode_konstan=None, tanggal_pegawai=None):
     """
     Fungsi utama untuk menjalankan alur download SKP Kadis & Sekdis dari Excel.
     """
     from utils import sanitize_filename
 
+    periode_final = periode_konstan if periode_konstan else PERIODE_KONSTAN
+    tanggal_final = tanggal_pegawai if tanggal_pegawai else TANGGAL_PEGAWAI
+
     log("── Memulai Proses Download SKP E-Kinerja ──")
+    log(f"  📌 Kode Periode SKP : {periode_final}")
+    log(f"  📌 Tanggal Pegawai  : {tanggal_final}")
 
     if stop_event.is_set():
         return False
@@ -242,9 +264,9 @@ def run_download_skp(excel_file, folder_output, log=print):
 
                 nama = bawahan['nama']
                 skp_id = bawahan['skp_id']
-                filename = os.path.join(folder_output, f"SKP_{label}_{nama}_{PERIODE_KONSTAN}.pdf")
+                filename = os.path.join(folder_output, f"SKP_{label}_{nama}_{periode_final}.pdf")
 
-                berhasil = download_skp(skp_id, PERIODE_KONSTAN, filename, token, label=label, log=log)
+                berhasil = download_skp(skp_id, periode_final, filename, token, label=label, tanggal_pegawai=tanggal_final, log=log)
                 if not berhasil:
                     antrean_gagal.append(bawahan)
 

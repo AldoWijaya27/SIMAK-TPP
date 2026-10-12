@@ -12,7 +12,7 @@ from steps.excel_csv import excel_sheet_disiplin_ke_csv
 from steps.download import download_rekap, stop_event, stop_download
 from steps.input_spesimen import input_spesimen
 from steps.analisis import analisis_kehadiran
-from steps.download_skp import run_download_skp
+from steps.download_skp import run_download_skp, PERIODE_SKP_MAP
 from steps.add_ttd_placeholder import process_pdfs
 from steps.merge2 import process_mail_merge
 from steps.merge_pdf_jabatan import merge_pdf_by_jabatan
@@ -516,6 +516,102 @@ class App:
         self.entry_bulan.insert(0, f"{bulan:02d}")
         self.entry_tahun.insert(0, str(now.year))
 
+        # ── Frame Konfigurasi SKP E-Kinerja (Hanya Muncul Jika Step SKP Aktif) ──
+        self.frame_skp_config = ctk.CTkFrame(period_card, fg_color="transparent")
+
+        sep_skp = ctk.CTkFrame(self.frame_skp_config, height=1, fg_color=COLORS["card_border"])
+        sep_skp.pack(fill="x", pady=(4, 8))
+
+        ctk.CTkLabel(
+            self.frame_skp_config, text="📑  SKP E-KINERJA",
+            font=ctk.CTkFont(family="Helvetica", size=11, weight="bold"),
+            text_color=COLORS["accent_green"]
+        ).pack(anchor="w", pady=(0, 4))
+
+        # 1. Periode Konstan (Tahun & Dropdown Bulan)
+        ctk.CTkLabel(
+            self.frame_skp_config, text="Periode Konstan (Tahun & Bulan)",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_label"]
+        ).pack(anchor="w", pady=(2, 3))
+
+        skp_periode_row = ctk.CTkFrame(self.frame_skp_config, fg_color="transparent")
+        skp_periode_row.pack(anchor="w", pady=(0, 8))
+
+        ctk.CTkLabel(skp_periode_row, text="Thn", font=ctk.CTkFont(size=11), text_color=COLORS["text_secondary"]).grid(row=0, column=0, padx=(0, 4))
+        self.entry_skp_tahun = ctk.CTkEntry(
+            skp_periode_row, width=65, height=30,
+            font=ctk.CTkFont(size=12),
+            border_color=COLORS["card_border"],
+            fg_color=COLORS["card_bg"],
+            text_color=COLORS["text_primary"],
+            justify="center"
+        )
+        self.entry_skp_tahun.grid(row=0, column=1, padx=(0, 10))
+        self.entry_skp_tahun.insert(0, str(now.year))
+
+        ctk.CTkLabel(skp_periode_row, text="Bulan", font=ctk.CTkFont(size=11), text_color=COLORS["text_secondary"]).grid(row=0, column=2, padx=(0, 4))
+        self.skp_bulan_var = tk.StringVar(value="SEPTEMBER")
+        self.option_skp_bulan = ctk.CTkOptionMenu(
+            skp_periode_row,
+            values=list(PERIODE_SKP_MAP.keys()),
+            variable=self.skp_bulan_var,
+            width=145, height=30,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color=COLORS["accent_green"],
+            button_color=COLORS["accent_green_hover"],
+            button_hover_color=COLORS["accent_green"],
+            dropdown_font=ctk.CTkFont(size=11)
+        )
+        self.option_skp_bulan.grid(row=0, column=3)
+
+        # 2. Tanggal Pegawai (Tahun - Bulan - Tanggal -> YYYY-MM-DD)
+        ctk.CTkLabel(
+            self.frame_skp_config, text="Tanggal Pegawai (Tahun - Bln - Tgl)",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_label"]
+        ).pack(anchor="w", pady=(2, 3))
+
+        skp_tgl_row = ctk.CTkFrame(self.frame_skp_config, fg_color="transparent")
+        skp_tgl_row.pack(anchor="w", pady=(0, 10))
+
+        self.entry_skp_tgl_tahun = ctk.CTkEntry(
+            skp_tgl_row, width=65, height=30,
+            font=ctk.CTkFont(size=12),
+            border_color=COLORS["card_border"],
+            fg_color=COLORS["card_bg"],
+            text_color=COLORS["text_primary"],
+            justify="center"
+        )
+        self.entry_skp_tgl_tahun.grid(row=0, column=0, padx=(0, 4))
+        self.entry_skp_tgl_tahun.insert(0, str(now.year))
+
+        ctk.CTkLabel(skp_tgl_row, text="-", font=ctk.CTkFont(size=12, weight="bold"), text_color=COLORS["text_secondary"]).grid(row=0, column=1, padx=(0, 4))
+
+        self.entry_skp_tgl_bulan = ctk.CTkEntry(
+            skp_tgl_row, width=45, height=30,
+            font=ctk.CTkFont(size=12),
+            border_color=COLORS["card_border"],
+            fg_color=COLORS["card_bg"],
+            text_color=COLORS["text_primary"],
+            justify="center"
+        )
+        self.entry_skp_tgl_bulan.grid(row=0, column=2, padx=(0, 4))
+        self.entry_skp_tgl_bulan.insert(0, f"{bulan:02d}")
+
+        ctk.CTkLabel(skp_tgl_row, text="-", font=ctk.CTkFont(size=12, weight="bold"), text_color=COLORS["text_secondary"]).grid(row=0, column=3, padx=(0, 4))
+
+        self.entry_skp_tgl_hari = ctk.CTkEntry(
+            skp_tgl_row, width=45, height=30,
+            font=ctk.CTkFont(size=12),
+            border_color=COLORS["card_border"],
+            fg_color=COLORS["card_bg"],
+            text_color=COLORS["text_primary"],
+            justify="center"
+        )
+        self.entry_skp_tgl_hari.grid(row=0, column=4)
+        self.entry_skp_tgl_hari.insert(0, "01")
+
         # ══════════════════════════════════════════
         # LOG CONSOLE (Tabbed — VS Code style)
         # ══════════════════════════════════════════
@@ -620,6 +716,9 @@ class App:
         self.access_validator = ValidateUserAccess(
             gateway=FirebaseRealtimeUserAccessGateway(base_url=FIREBASE_URL)
         )
+
+        # Inisialisasi tampilan form
+        self._update_form_visibility()
 
     # ══════════════════════════════════════════════════════════
     # Helper: Create a file input row
@@ -1040,6 +1139,15 @@ class App:
             if self.worker_section.winfo_ismapped():
                 self.worker_section.pack_forget()
 
+        # Input Periode Konstan & Tanggal Pegawai: hanya tampil jika Download SKP aktif
+        if hasattr(self, 'frame_skp_config') and hasattr(self, 'var_download_skp'):
+            if self.var_download_skp.get():
+                if not self.frame_skp_config.winfo_ismapped():
+                    self.frame_skp_config.pack(fill="x", padx=18, pady=(0, 15))
+            else:
+                if self.frame_skp_config.winfo_ismapped():
+                    self.frame_skp_config.pack_forget()
+
     def _set_status(self, text, color):
         """Update the status label in the header."""
         self.status_label.configure(text=text, text_color=color)
@@ -1276,8 +1384,29 @@ class App:
                 if not excel_pegawai or not os.path.exists(excel_pegawai):
                     show_err("File Data Pegawai Excel belum dipilih atau file tidak ditemukan.")
                     return
+
+                # Ambil konfigurasi periode konstan & tanggal pegawai dari form
+                thn_skp = self.entry_skp_tahun.get().strip() or str(tahun)
+                bln_skp_name = self.skp_bulan_var.get().strip()
+                kode_bln_skp = PERIODE_SKP_MAP.get(bln_skp_name, "490b2797ecac489cb01f6cf6712de843")
+                periode_konstan_final = f"{thn_skp}-{kode_bln_skp}"
+
+                thn_tgl = self.entry_skp_tgl_tahun.get().strip() or str(tahun)
+                bln_tgl = (self.entry_skp_tgl_bulan.get().strip() or str(bulan)).zfill(2)
+                hari_tgl = (self.entry_skp_tgl_hari.get().strip() or "01").zfill(2)
+                tanggal_pegawai_final = f"{thn_tgl}-{bln_tgl}-{hari_tgl}"
+
                 self.log("── [4/7] Download SKP E-Kinerja & TTD Placeholder ──")
-                berhasil_skp = run_download_skp(excel_pegawai, DIR_SKP, self.log)
+                self.log(f"  📌 Periode E-Kin : {bln_skp_name} ({periode_konstan_final})")
+                self.log(f"  📌 Tgl Pegawai   : {tanggal_pegawai_final}")
+
+                berhasil_skp = run_download_skp(
+                    excel_pegawai,
+                    DIR_SKP,
+                    self.log,
+                    periode_konstan=periode_konstan_final,
+                    tanggal_pegawai=tanggal_pegawai_final
+                )
                 if stop_event.is_set():
                     return
 
