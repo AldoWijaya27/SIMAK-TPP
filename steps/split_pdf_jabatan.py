@@ -1,7 +1,7 @@
 import os
 import fitz  # PyMuPDF
 import pandas as pd
-from utils import sanitize_filename, is_skp_already_included, is_skp_closing_page
+from utils import sanitize_filename, is_skp_already_included, is_skp_closing_page, is_rekap_closing_page
 from steps.merge_pdf_jabatan import KELOMPOK_PIMPINAN, _find_pdf_for_pegawai, _find_skp_for_pegawai
 
 
@@ -178,26 +178,43 @@ def split_pdf_jabatan(dir_output, csv_file, bulan, tahun, log, pdf_gabungan_path
                         log(f"    ⚠ Gagal cek hlmn SKP '{nama_raw}': {e}.")
                         pages_skp = 0
 
-                # ── DETEKSI DINAMIS HALAMAN TERAKHIR PEGAWAI BERDASARKAN PENUTUP SKP ──
+                # ── DETEKSI DINAMIS HALAMAN TERAKHIR PEGAWAI ──
                 end_page = None
+                deteksi_tipe = None
+
+                # SKENARIO 1: Pegawai memiliki berkas SKP E-Kinerja
                 if skp_asli_path:
-                    # Scan dari current_page_idx ke depan mencari halaman tanda tangan penutup SKP
                     max_scan = min(current_page_idx + 25, total_pages_gabungan)
                     for p in range(current_page_idx, max_scan):
                         try:
                             p_text = doc_gabungan[p].get_text()
                             if is_skp_closing_page(p_text, nama=nama_raw, nip=nip_raw):
                                 end_page = p
+                                deteksi_tipe = "Penutup SKP"
+                                break
+                        except Exception:
+                            pass
+
+                # SKENARIO 2: Pegawai TIDAK memiliki berkas SKP E-Kinerja
+                # Hentikan di tanda tangan srikandi / teks catatan presensi jam kerja (bagian paling bawah)
+                else:
+                    max_scan = min(current_page_idx + 20, total_pages_gabungan)
+                    for p in range(current_page_idx, max_scan):
+                        try:
+                            p_text = doc_gabungan[p].get_text()
+                            if is_rekap_closing_page(p_text):
+                                end_page = p
+                                deteksi_tipe = "Penutup Rekap Srikandi"
                                 break
                         except Exception:
                             pass
 
                 if end_page is not None:
-                    # Ditemukan halaman penutup SKP secara dinamis!
+                    # Ditemukan halaman penutup secara dinamis!
                     pages_needed = (end_page - current_page_idx) + 1
                     pages_tpp = pages_needed - pages_skp if pages_needed >= pages_skp else pages_needed
                 else:
-                    # Fallback jika lembar SKP tidak terbaca teksnya atau pegawai tanpa SKP
+                    # Fallback jika lembar tidak terbaca teksnya (misal scan flat image)
                     skp_sudah_tergabung = is_already_ttd or is_skp_already_included(pdf_asli_path, skp_asli_path)
                     if skp_sudah_tergabung:
                         pages_needed = total_doc_hlmn
@@ -206,6 +223,7 @@ def split_pdf_jabatan(dir_output, csv_file, bulan, tahun, log, pdf_gabungan_path
                         pages_tpp = total_doc_hlmn
                         pages_needed = pages_tpp + pages_skp
                     end_page = current_page_idx + pages_needed - 1
+                    deteksi_tipe = "Jumlah Halaman Asli"
 
                 if current_page_idx + pages_needed > total_pages_gabungan:
                     log(f"    ❌ Halaman di PDF Gabungan kurang untuk '{nama_raw}'! "
@@ -261,7 +279,7 @@ def split_pdf_jabatan(dir_output, csv_file, bulan, tahun, log, pdf_gabungan_path
                         except Exception as e_skp:
                             log(f"    ⚠ Gagal menyimpan salinan SKP TTD terpisah untuk '{nama_raw}': {e_skp}")
 
-                    deteksi_info = "Deteksi Penutup SKP" if (skp_asli_path and end_page is not None) else "Jumlah Halaman Asli"
+                    deteksi_info = f"Deteksi {deteksi_tipe}" if deteksi_tipe else "Jumlah Halaman Asli"
                     detail_hlmn = f"Hal {current_page_idx + 1} s/d {end_page + 1} ({pages_needed} hlmn, {deteksi_info})"
                     log(f"    ✔ {nama_raw} ({detail_hlmn}) -> {nama_file_baru}")
                     if pages_skp > 0:

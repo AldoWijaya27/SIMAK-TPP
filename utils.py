@@ -149,3 +149,66 @@ def is_skp_closing_page(page_text, nama="", nip=""):
     )
     return has_ttd_marker
 
+
+def is_rekap_closing_page(page_text):
+    """
+    Mendeteksi apakah suatu halaman merupakan halaman terakhir/penutup Rekap Kehadiran
+    (memuat catatan presensi jam kerja warna merah/biru atau stempel/tanda tangan Srikandi).
+    """
+    if not page_text or not page_text.strip():
+        return False
+
+    text_upper = page_text.upper()
+
+    # Kriteria utama: teks catatan presensi jam kerja di bagian paling bawah
+    has_catatan_warna = (
+        ("WARNA MERAH APABILA PRESENSI TIDAK SESUAI" in text_upper) or
+        ("TERLAMBAT MASUK ATAU PULANG LEBIH CEPAT" in text_upper) or
+        ("WARNA BIRU APABILA PRESENSI SESUAI" in text_upper)
+    )
+    if has_catatan_warna:
+        return True
+
+    # Kriteria alternatif: memuat catatan kolom presensi dan tanda tangan instansi
+    has_catatan = ("DURASI KERJA ADALAH JAM PULANG" in text_upper) or ("APABILA JAM HADIR" in text_upper)
+    has_instansi = ("PEMPROV LAMPUNG" in text_upper) or ("KEPALA DINAS KEHUTANAN" in text_upper)
+    return has_catatan and has_instansi
+
+
+def remove_trailing_blank_pages(pdf_path):
+    """
+    Menghapus halaman kosong yang tidak sengaja ter-generate di akhir PDF
+    (misalnya halaman kosong ke-4 akibat overflow karakter enter dari template Word).
+    """
+    if not pdf_path or not os.path.exists(pdf_path):
+        return False
+    try:
+        doc = fitz.open(pdf_path)
+        total = len(doc)
+        if total <= 1:
+            doc.close()
+            return False
+
+        last_non_empty = -1
+        for i in range(total - 1, -1, -1):
+            page = doc[i]
+            text = page.get_text().strip()
+            images = page.get_images()
+            drawings = page.get_drawings()
+            if text or images or drawings:
+                last_non_empty = i
+                break
+
+        if last_non_empty != -1 and last_non_empty < total - 1:
+            clean_doc = fitz.open()
+            clean_doc.insert_pdf(doc, from_page=0, to_page=last_non_empty)
+            doc.close()
+            clean_doc.save(pdf_path)
+            clean_doc.close()
+            return True
+        doc.close()
+        return False
+    except Exception:
+        return False
+
+

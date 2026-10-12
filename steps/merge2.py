@@ -19,7 +19,7 @@ try:
 except ImportError:
     MAILMERGE_AVAILABLE = False
 
-from utils import sanitize_filename, find_rekap_pdf, merge_pdf, find_skp_pdf
+from utils import sanitize_filename, find_rekap_pdf, merge_pdf, find_skp_pdf, remove_trailing_blank_pages
 
 # Monkeypatch shlex.split to handle unclosed quotes in Word mergefield formatting instructions
 original_split = shlex.split
@@ -172,6 +172,9 @@ def _run_windows_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_
                     break
                 except Exception:
                     time.sleep(0.3)
+
+            # Hapus halaman kosong yang tidak sengaja terdorong oleh Word ke akhir dokumen
+            remove_trailing_blank_pages(temp_pdf)
 
             rekap = find_rekap_pdf(DIR_REKAP, bidang, nama)
             skp_pdf = find_skp_pdf(dir_skp, nama) if dir_skp else None
@@ -372,6 +375,9 @@ def _run_macos_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_wo
                 os.remove(temp_docx)
             except OSError:
                 pass
+
+        # Hapus halaman kosong yang tidak sengaja terdorong ke akhir dokumen
+        remove_trailing_blank_pages(temp_pdf)
 
         # 3. Cari file rekap PDF & SKP PDF
         rekap = find_rekap_pdf(DIR_REKAP, bidang, nama)
