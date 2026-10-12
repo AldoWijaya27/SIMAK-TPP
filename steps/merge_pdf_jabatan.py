@@ -83,8 +83,8 @@ def merge_pdf_by_jabatan(dir_output, csv_file, bulan, tahun, log, dir_skp=None):
 
     # Deteksi otomatis dir_skp jika belum diberikan
     if not dir_skp:
-        calon_skp_1 = os.path.join(os.path.dirname(dir_output), "hasil_download_skp")
-        calon_skp_2 = os.path.join(dir_output, "hasil_download_skp")
+        calon_skp_1 = os.path.join(os.path.dirname(dir_output), "EKIN SKP")
+        calon_skp_2 = os.path.join(dir_output, "EKIN SKP")
         if os.path.exists(calon_skp_1):
             dir_skp = calon_skp_1
         elif os.path.exists(calon_skp_2):

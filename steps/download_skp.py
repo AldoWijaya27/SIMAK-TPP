@@ -381,5 +381,5 @@ def run_download_skp(excel_file, folder_output, log=print, periode_konstan=None,
 
 if __name__ == "__main__":
     test_excel = "data-pegawai.xlsx"
-    test_output = "hasil_download_skp"
+    test_output = "EKIN SKP"
     run_download_skp(test_excel, test_output)

@@ -100,5 +100,5 @@ def process_pdfs(folder_path, log=print):
     simpan_gabungan(merged_doc_sekdis, "gabungan_skp_sekdis_compressed.pdf")
 
 if __name__ == "__main__":
-    folder_target = "hasil_download_skp"
+    folder_target = "EKIN SKP"
     process_pdfs(folder_target)

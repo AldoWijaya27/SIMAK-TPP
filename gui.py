@@ -1182,7 +1182,7 @@ class App:
             DIR_REKAP = os.path.join(base_dir, "REKAP KEHADIRAN")
             DIR_REKAP_DITANDATANGANI = os.path.join(base_dir, "REKAP KEHADIRAN DITANDATANGANI")
             DIR_OUTPUT = os.path.join(base_dir, "PERHITUNGAN TPP")
-            DIR_SKP = os.path.join(base_dir, "hasil_download_skp")
+            DIR_SKP = os.path.join(base_dir, "EKIN SKP")
             TEMP_DIR = os.path.join(base_dir, "TEMP")
 
             DIR_REKAP_DITANDATANGANI = os.path.abspath(DIR_REKAP_DITANDATANGANI)
