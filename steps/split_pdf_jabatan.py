@@ -2,7 +2,7 @@ import os
 import fitz  # PyMuPDF
 import pandas as pd
 from utils import sanitize_filename
-from steps.merge_pdf_jabatan import KELOMPOK_PIMPINAN, _find_pdf_for_pegawai
+from steps.merge_pdf_jabatan import KELOMPOK_PIMPINAN, _find_pdf_for_pegawai, _find_skp_for_pegawai
 
 
 def _detect_kelompok(pdf_filename):
@@ -17,15 +17,37 @@ def _detect_kelompok(pdf_filename):
     return None
 
 
-def split_pdf_jabatan(dir_output, csv_file, bulan, tahun, log, pdf_gabungan_path=""):
+def split_pdf_jabatan(dir_output, csv_file, bulan, tahun, log, pdf_gabungan_path="", dir_skp=None):
     """
     Memecah file PDF Gabungan (yang telah ditandatangani) kembali menjadi file individu,
     berdasarkan urutan saat proses merge, lalu menyimpan ke folder bidang masing-masing.
+
+    Setiap file individu ({NAMA}_TTD.pdf) mencakup:
+      1. Dokumen TPP & Kehadiran yang telah di-TTE
+      2. Dokumen SKP E-Kinerja yang telah di-TTE (jika ada)
 
     Otomatis mendeteksi kelompok (KaDis / Sekretaris) dari nama file PDF yang dimasukkan.
     User bisa menjalankan step ini 2x: sekali untuk file KaDis, sekali untuk Sekretaris.
     """
     log("── Memulai proses Pecah & Distribusi Dokumen TTD ──")
+
+    # Deteksi otomatis dir_skp jika belum diberikan
+    if not dir_skp:
+        calon_skp_list = [
+            os.path.join(os.path.dirname(dir_output), "EKIN SKP"),
+            os.path.join(dir_output, "EKIN SKP"),
+            os.path.join(os.path.dirname(dir_output), "hasil_download_skp"),
+            os.path.join(dir_output, "hasil_download_skp"),
+        ]
+        for calon in calon_skp_list:
+            if os.path.exists(calon):
+                dir_skp = calon
+                break
+
+    if dir_skp and os.path.exists(dir_skp):
+        log(f"  📂 Folder SKP Ekin terdeteksi: {os.path.basename(dir_skp)}")
+    else:
+        log("  ℹ Folder SKP Ekin tidak ditemukan (asumsi hanya dokumen TPP & kehadiran).")
 
     if not csv_file or not os.path.exists(csv_file):
         log("❌ File CSV tidak ditemukan. Pastikan step Generate CSV sudah dijalankan.")
@@ -129,16 +151,37 @@ def split_pdf_jabatan(dir_output, csv_file, bulan, tahun, log, pdf_gabungan_path
                 jabatan = ""
 
             pdf_asli_path = _find_pdf_for_pegawai(dir_output, nama_safe)
+            skp_asli_path = _find_skp_for_pegawai(dir_skp, nama_safe) if dir_skp else None
 
             if pdf_asli_path:
-                # Cek jumlah halaman PDF asli untuk memotong dengan jumlah yang persis sama
+                # Cek apakah file asli adalah file _TTD (rerun) atau file sebelum TTD
+                is_already_ttd = pdf_asli_path.endswith("_TTD.pdf")
+
                 try:
                     doc_asli = fitz.open(pdf_asli_path)
-                    pages_needed = len(doc_asli)
+                    total_doc_hlmn = len(doc_asli)
                     doc_asli.close()
                 except Exception as e:
                     log(f"    ⚠ Gagal cek hlmn PDF asli '{nama_raw}': {e}. Asumsi 1 hlmn.")
-                    pages_needed = 1
+                    total_doc_hlmn = 1
+
+                pages_skp = 0
+                if skp_asli_path and os.path.exists(skp_asli_path):
+                    try:
+                        doc_skp = fitz.open(skp_asli_path)
+                        pages_skp = len(doc_skp)
+                        doc_skp.close()
+                    except Exception as e:
+                        log(f"    ⚠ Gagal cek hlmn SKP '{nama_raw}': {e}.")
+                        pages_skp = 0
+
+                if is_already_ttd:
+                    # File sudah pernah di-split sebelumnya (sudah mencakup TPP + SKP)
+                    pages_needed = total_doc_hlmn
+                    pages_tpp = pages_needed - pages_skp if pages_needed >= pages_skp else pages_needed
+                else:
+                    pages_tpp = total_doc_hlmn
+                    pages_needed = pages_tpp + pages_skp
 
                 if current_page_idx + pages_needed > total_pages_gabungan:
                     log(f"    ❌ Halaman di PDF Gabungan kurang untuk '{nama_raw}'! "
@@ -148,7 +191,7 @@ def split_pdf_jabatan(dir_output, csv_file, bulan, tahun, log, pdf_gabungan_path
                     doc_gabungan.close()
                     return
 
-                # Ekstrak halaman
+                # Ekstrak seluruh halaman pegawai (TPP + SKP E-Kinerja)
                 doc_baru = fitz.open()
                 doc_baru.insert_pdf(doc_gabungan,
                                     from_page=current_page_idx,
@@ -162,14 +205,41 @@ def split_pdf_jabatan(dir_output, csv_file, bulan, tahun, log, pdf_gabungan_path
                     doc_baru.save(path_simpan)
                     berhasil_split += 1
 
-                    # Hapus file PDF aslinya karena diminta replace dengan nama baru
+                    # Hapus file PDF aslinya karena digantikan dengan versi TTD
                     if os.path.exists(pdf_asli_path) and pdf_asli_path != path_simpan:
                         try:
                             os.remove(pdf_asli_path)
                         except OSError as e:
                             log(f"    ⚠ Gagal menghapus file lama '{pdf_asli_path}': {e}")
 
-                    log(f"    ✔ {nama_raw} ({pages_needed} hlmn) -> {nama_file_baru}")
+                    # Ekstrak salinan terpisah khusus SKP E-kinerja yang telah di-TTE (jika ada)
+                    if pages_skp > 0:
+                        try:
+                            doc_skp_ttd = fitz.open()
+                            doc_skp_ttd.insert_pdf(
+                                doc_gabungan,
+                                from_page=current_page_idx + pages_tpp,
+                                to_page=current_page_idx + pages_needed - 1
+                            )
+                            # Simpan di folder bidang pegawai
+                            path_skp_bidang = os.path.join(folder_bidang, f"SKP_{nama_safe}_TTD.pdf")
+                            doc_skp_ttd.save(path_skp_bidang)
+
+                            # Simpan juga di folder SKP (subfolder SKP_TTD) jika dir_skp tersedia
+                            if dir_skp and os.path.exists(dir_skp):
+                                folder_skp_ttd = os.path.join(dir_skp, "SKP_TTD")
+                                os.makedirs(folder_skp_ttd, exist_ok=True)
+                                base_skp_name = os.path.splitext(os.path.basename(skp_asli_path))[0]
+                                doc_skp_ttd.save(os.path.join(folder_skp_ttd, f"{base_skp_name}_TTD.pdf"))
+
+                            doc_skp_ttd.close()
+                        except Exception as e_skp:
+                            log(f"    ⚠ Gagal menyimpan salinan SKP TTD terpisah untuk '{nama_raw}': {e_skp}")
+
+                    detail_hlmn = f"TPP: {pages_tpp} hlmn" + (f", SKP: {pages_skp} hlmn" if pages_skp > 0 else "")
+                    log(f"    ✔ {nama_raw} ({detail_hlmn} -> Total {pages_needed} hlmn) -> {nama_file_baru}")
+                    if pages_skp > 0:
+                        log(f"      + SKP TTE diekstrak: SKP_{nama_safe}_TTD.pdf")
                 except Exception as e:
                     log(f"    ❌ Gagal menyimpan '{nama_file_baru}': {e}")
                 finally:

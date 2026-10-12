@@ -37,7 +37,15 @@ def _find_pdf_for_pegawai(dir_output, nama_sanitized):
     # Abaikan file yang ada di root DIR_OUTPUT (itu file hasil merge)
     matches = [m for m in matches if os.path.dirname(m) != os.path.abspath(dir_output)]
 
-    return matches[0] if matches else None
+    if matches:
+        return matches[0]
+
+    # Fallback jika file berakhiran _TTD.pdf
+    pattern_ttd = os.path.join(dir_output, "**", f"{nama_sanitized}_TTD.pdf")
+    matches_ttd = glob.glob(pattern_ttd, recursive=True)
+    matches_ttd = [m for m in matches_ttd if os.path.dirname(m) != os.path.abspath(dir_output)]
+
+    return matches_ttd[0] if matches_ttd else None
 
 
 def _find_skp_for_pegawai(dir_skp, nama_sanitized):
@@ -49,17 +57,17 @@ def _find_skp_for_pegawai(dir_skp, nama_sanitized):
     if not dir_skp or not os.path.exists(dir_skp):
         return None
 
-    # Cari file yang sesuai pola SKP_*_<nama>_*.pdf (abaikan file gabungan)
+    # Cari file yang sesuai pola SKP_*_<nama>_*.pdf (abaikan file gabungan dan file _TTD)
     pattern = os.path.join(dir_skp, f"SKP_*_{nama_sanitized}_*.pdf")
     matches = glob.glob(pattern)
-    matches = [m for m in matches if not os.path.basename(m).startswith("gabungan_")]
+    matches = [m for m in matches if not os.path.basename(m).startswith("gabungan_") and not os.path.basename(m).endswith("_TTD.pdf")]
     if matches:
         return matches[0]
 
     # Fallback pencarian dengan substring nama
     pattern_fallback = os.path.join(dir_skp, f"*{nama_sanitized}*.pdf")
     matches_fallback = glob.glob(pattern_fallback)
-    matches_fallback = [m for m in matches_fallback if not os.path.basename(m).startswith("gabungan_")]
+    matches_fallback = [m for m in matches_fallback if not os.path.basename(m).startswith("gabungan_") and not os.path.basename(m).endswith("_TTD.pdf")]
     if matches_fallback:
         return matches_fallback[0]
 
@@ -83,12 +91,16 @@ def merge_pdf_by_jabatan(dir_output, csv_file, bulan, tahun, log, dir_skp=None):
 
     # Deteksi otomatis dir_skp jika belum diberikan
     if not dir_skp:
-        calon_skp_1 = os.path.join(os.path.dirname(dir_output), "EKIN SKP")
-        calon_skp_2 = os.path.join(dir_output, "EKIN SKP")
-        if os.path.exists(calon_skp_1):
-            dir_skp = calon_skp_1
-        elif os.path.exists(calon_skp_2):
-            dir_skp = calon_skp_2
+        calon_skp_list = [
+            os.path.join(os.path.dirname(dir_output), "EKIN SKP"),
+            os.path.join(dir_output, "EKIN SKP"),
+            os.path.join(os.path.dirname(dir_output), "hasil_download_skp"),
+            os.path.join(dir_output, "hasil_download_skp"),
+        ]
+        for calon in calon_skp_list:
+            if os.path.exists(calon):
+                dir_skp = calon
+                break
 
     if dir_skp and os.path.exists(dir_skp):
         log(f"  📂 Folder SKP Ekin terdeteksi: {os.path.basename(dir_skp)}")

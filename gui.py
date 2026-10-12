@@ -1457,7 +1457,7 @@ class App:
                         return
 
                 self.log("── [7/7] Pecah & Distribusi Dokumen TTD ──")
-                split_pdf_jabatan(DIR_OUTPUT, csv_output, bulan, tahun, self.log, pdf_gabungan)
+                split_pdf_jabatan(DIR_OUTPUT, csv_output, bulan, tahun, self.log, pdf_gabungan, dir_skp=DIR_SKP)
 
             # Jika berhasil semua
             if not stop_event.is_set():
