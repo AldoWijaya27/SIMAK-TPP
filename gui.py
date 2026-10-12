@@ -201,8 +201,8 @@ class App:
         self.step_definitions = [
             ("Download Rekap\nKehadiran",        "⬇"),
             ("Rekap Kehadiran\nApel",           "📋"),
-            ("Analisis\nKehadiran",              "📊"),
             ("Download SKP\nE-Kinerja",         "📑"),
+            ("Analisis\nKehadiran",              "📊"),
             ("Mail Merge TPP",                  "📨"),
             ("Merge PDF\nper Jabatan",          "🗂️"),
             ("Pecah & Distribusi\nDokumen TTD", "✂️"),
@@ -212,15 +212,13 @@ class App:
         self.step_frames = []
 
         # Definisi grup eksklusif (harus ada SEBELUM switch dibuat):
-        #   Grup A: Step 1 & 2    (index 0, 1)       — Download + Rekap Apel
-        #   Grup B: Step 3, 5, 6  (index 2, 4, 5)    — Analisis, Mail Merge, Merge Jabatan
-        #   Grup C: Step 7        (index 6)          — Pecah & Distribusi TTD
-        #   Grup D: Step 4        (index 3)          — Download SKP E-Kinerja
+        #   Grup A: Step 1 & 2          (index 0, 1)          — Download + Rekap Apel
+        #   Grup B: Step 3, 4, 5, 6     (index 2, 3, 4, 5)    — Download SKP, Analisis, Mail Merge, Merge Jabatan
+        #   Grup C: Step 7              (index 6)             — Pecah & Distribusi TTD
         self._step_groups = {
             "A": [0, 1],
-            "B": [2, 4, 5],
+            "B": [2, 3, 4, 5],
             "C": [6],
-            "D": [3],
         }
         self._index_to_group = {}
         for group_name, indices in self._step_groups.items():
@@ -286,8 +284,8 @@ class App:
         # Map step vars to variable names
         self.var_download      = self.step_vars[0]
         self.var_rekap_apel    = self.step_vars[1]
-        self.var_analisis      = self.step_vars[2]
-        self.var_download_skp  = self.step_vars[3]
+        self.var_download_skp  = self.step_vars[2]
+        self.var_analisis      = self.step_vars[3]
         self.var_mailmerge     = self.step_vars[4]
         self.var_merge_jabatan = self.step_vars[5]
         self.var_split_pdf     = self.step_vars[6]
@@ -1032,11 +1030,10 @@ class App:
         self._log_tab_buttons["Warning"].configure(text="⚠ Warning")
 
     def _on_step_toggle(self, toggled_index):
-        """Enforce mutual exclusivity antara 4 grup step:
-        Grup A: Step 1 & 2    (Download + Rekap Apel)
-        Grup B: Step 3, 5, 6  (Analisis, Mail Merge, Merge Jabatan)
-        Grup C: Step 7        (Pecah & Distribusi TTD)
-        Grup D: Step 4        (Download SKP E-Kinerja)
+        """Enforce mutual exclusivity antara 3 grup step:
+        Grup A: Step 1 & 2       (Download + Rekap Apel)
+        Grup B: Step 3, 4, 5, 6  (Download SKP, Analisis, Mail Merge, Merge Jabatan)
+        Grup C: Step 7           (Pecah & Distribusi TTD)
         Ketika step di satu grup dinyalakan, semua step di grup lain otomatis mati.
         """
         # Safety guard: jangan jalankan jika init belum selesai
@@ -1080,9 +1077,8 @@ class App:
     def _update_form_visibility(self):
         """Show/hide form fields berdasarkan grup step yang aktif:
         Grup A (Step 1-2): Data Pegawai, Worker Slider
-        Grup B (Step 3, 5, 6): Template Excel, Kalender Kerja
+        Grup B (Step 3, 4, 5, 6): Data Pegawai, SKP Config, Template Excel, Kalender Kerja
         Grup C (Step 7): PDF Gabungan
-        Grup D (Step 4 - Download SKP): Data Pegawai, SKP Config (tanpa PDF Gabungan, Kalender, Template Excel)
         Folder Hasil & Periode selalu tampil.
         """
         # Safety guard
@@ -1105,7 +1101,7 @@ class App:
 
         # Sembunyikan semua field input terlebih dahulu agar urutan tetap konsisten
         fields = [
-            (self._frame_data_pegawai,   ["A", "D", "ALL"]),
+            (self._frame_data_pegawai,   ["A", "B", "ALL"]),
             (self._frame_template_excel, ["B", "ALL"]),
             (self._frame_kalender_json,  ["B", "ALL"]),
             (self._frame_pdf_gabungan,   ["C", "ALL"]),
@@ -1129,10 +1125,10 @@ class App:
         if active_group in ["A", "ALL"]:
             self.worker_section.pack(**worker_pack_opts)
 
-        # Input Periode Konstan & Tanggal Pegawai: hanya tampil jika Download SKP aktif (Grup D atau ALL)
+        # Input Periode Konstan & Tanggal Pegawai: tampil jika Download SKP aktif (Grup B atau ALL)
         if hasattr(self, 'frame_skp_config') and hasattr(self, 'var_download_skp'):
             self.frame_skp_config.pack_forget()
-            if self.var_download_skp.get() or active_group in ["D", "ALL"]:
+            if self.var_download_skp.get() or active_group in ["B", "ALL"]:
                 self.frame_skp_config.pack(fill="x", padx=18, pady=(0, 15))
 
     def _set_status(self, text, color):
@@ -1265,14 +1261,50 @@ class App:
                 self.log("── [2/7] Rekap Kehadiran Apel ──")
                 rekap_kehadiran_apel(DIR_REKAP_DITANDATANGANI, excel_pegawai, bulan, tahun, None, self.log, ekin_apel)
 
-            # STEP 3 — ANALISIS KEHADIRAN
+            # STEP 3 — DOWNLOAD SKP E-KINERJA & ADD TTD PLACEHOLDER
+            if self.var_download_skp.get():
+                if stop_event.is_set():
+                    return
+                if not excel_pegawai or not os.path.exists(excel_pegawai):
+                    show_err("File Data Pegawai Excel belum dipilih atau file tidak ditemukan.")
+                    return
+
+                # Ambil konfigurasi periode konstan & tanggal pegawai dari form
+                thn_skp = self.entry_skp_tahun.get().strip() or str(tahun)
+                bln_skp_name = self.skp_bulan_var.get().strip()
+                kode_bln_skp = PERIODE_SKP_MAP.get(bln_skp_name, "490b2797ecac489cb01f6cf6712de843")
+                periode_konstan_final = f"{thn_skp}-{kode_bln_skp}"
+
+                thn_tgl = self.entry_skp_tgl_tahun.get().strip() or str(tahun)
+                bln_tgl = (self.entry_skp_tgl_bulan.get().strip() or str(bulan)).zfill(2)
+                hari_tgl = (self.entry_skp_tgl_hari.get().strip() or "01").zfill(2)
+                tanggal_pegawai_final = f"{thn_tgl}-{bln_tgl}-{hari_tgl}"
+
+                self.log("── [3/7] Download SKP E-Kinerja & TTD Placeholder ──")
+                self.log(f"  📌 Periode E-Kin : {bln_skp_name} ({periode_konstan_final})")
+                self.log(f"  📌 Tgl Pegawai   : {tanggal_pegawai_final}")
+
+                berhasil_skp = run_download_skp(
+                    excel_pegawai,
+                    DIR_SKP,
+                    self.log,
+                    periode_konstan=periode_konstan_final,
+                    tanggal_pegawai=tanggal_pegawai_final
+                )
+                if stop_event.is_set():
+                    return
+
+                self.log("  ✍ Menambahkan placeholder TTD (${ttd_pengirim}) pada dokumen SKP...")
+                process_pdfs(DIR_SKP, log=self.log)
+
+            # STEP 4 — ANALISIS KEHADIRAN
             if self.var_analisis.get():
                 if stop_event.is_set():
                     return
                 if not excel or not os.path.exists(excel):
                     show_err("Template Excel belum dipilih atau file tidak ditemukan.")
                     return
-                self.log("── [3/7] Analisis Kehadiran ──")
+                self.log("── [4/7] Analisis Kehadiran ──")
                 analisis_kehadiran(DIR_REKAP_DITANDATANGANI, excel, output_excel, self.log, json_kalender)
 
             # GABUNG EKIN & APEL (OTOMATIS TANPA TOGGLE)
@@ -1364,42 +1396,6 @@ class App:
                     import shutil
                     shutil.copy(output_excel, output_template_ready)
 
-            # STEP 4 — DOWNLOAD SKP E-KINERJA & ADD TTD PLACEHOLDER
-            if self.var_download_skp.get():
-                if stop_event.is_set():
-                    return
-                if not excel_pegawai or not os.path.exists(excel_pegawai):
-                    show_err("File Data Pegawai Excel belum dipilih atau file tidak ditemukan.")
-                    return
-
-                # Ambil konfigurasi periode konstan & tanggal pegawai dari form
-                thn_skp = self.entry_skp_tahun.get().strip() or str(tahun)
-                bln_skp_name = self.skp_bulan_var.get().strip()
-                kode_bln_skp = PERIODE_SKP_MAP.get(bln_skp_name, "490b2797ecac489cb01f6cf6712de843")
-                periode_konstan_final = f"{thn_skp}-{kode_bln_skp}"
-
-                thn_tgl = self.entry_skp_tgl_tahun.get().strip() or str(tahun)
-                bln_tgl = (self.entry_skp_tgl_bulan.get().strip() or str(bulan)).zfill(2)
-                hari_tgl = (self.entry_skp_tgl_hari.get().strip() or "01").zfill(2)
-                tanggal_pegawai_final = f"{thn_tgl}-{bln_tgl}-{hari_tgl}"
-
-                self.log("── [4/7] Download SKP E-Kinerja & TTD Placeholder ──")
-                self.log(f"  📌 Periode E-Kin : {bln_skp_name} ({periode_konstan_final})")
-                self.log(f"  📌 Tgl Pegawai   : {tanggal_pegawai_final}")
-
-                berhasil_skp = run_download_skp(
-                    excel_pegawai,
-                    DIR_SKP,
-                    self.log,
-                    periode_konstan=periode_konstan_final,
-                    tanggal_pegawai=tanggal_pegawai_final
-                )
-                if stop_event.is_set():
-                    return
-
-                self.log("  ✍ Menambahkan placeholder TTD (${ttd_pengirim}) pada dokumen SKP...")
-                process_pdfs(DIR_SKP, log=self.log)
-
             # STEP 5 — MAIL MERGE TPP (Termasuk Generate CSV Otomatis)
             if self.var_mailmerge.get():
                 if stop_event.is_set():
@@ -1408,7 +1404,7 @@ class App:
                     show_err("Template Word TPP tidak ditemukan.")
                     return
                 if not os.path.exists(output_template_ready):
-                    show_err("File Disiplin_TPP_Lengkap.xlsx tidak ditemukan di Folder Hasil. Jalankan step Analisis Kehadiran (Step 3) terlebih dahulu.", title="Prasyarat Belum Ada")
+                    show_err("File Disiplin_TPP_Lengkap.xlsx tidak ditemukan di Folder Hasil. Jalankan step Analisis Kehadiran (Step 4) terlebih dahulu.", title="Prasyarat Belum Ada")
                     return
 
                 # Otomatis Generate CSV dari Disiplin_TPP_Lengkap.xlsx
@@ -1416,7 +1412,7 @@ class App:
                 excel_sheet_disiplin_ke_csv(output_template_ready, base_dir)
 
                 self.log("── [5/7] Mail Merge TPP ──")
-                process_mail_merge(DIR_REKAP_DITANDATANGANI, DIR_OUTPUT, TEMP_DIR, csv_output, word, self.log)
+                process_mail_merge(DIR_REKAP_DITANDATANGANI, DIR_OUTPUT, TEMP_DIR, csv_output, word, self.log, dir_skp=DIR_SKP)
 
             # STEP 6 — MERGE PDF PER JABATAN
             if self.var_merge_jabatan.get():
@@ -1453,7 +1449,7 @@ class App:
                         self.log("  📄 Generating CSV (otomatis)...")
                         excel_sheet_disiplin_ke_csv(output_template_ready, base_dir)
                     else:
-                        show_err("File CSV (Disiplin_TPP_Lengkap.csv) tidak ditemukan di Folder Hasil.\n\nFile CSV ini diperlukan untuk memetakan halaman PDF ke masing-masing pegawai. Jalankan Step 3 & 4 terlebih dahulu.", title="Prasyarat Belum Ada")
+                        show_err("File CSV (Disiplin_TPP_Lengkap.csv) tidak ditemukan di Folder Hasil.\n\nFile CSV ini diperlukan untuk memetakan halaman PDF ke masing-masing pegawai. Jalankan Step 4 terlebih dahulu.", title="Prasyarat Belum Ada")
                         return
 
                 self.log("── [7/7] Pecah & Distribusi Dokumen TTD ──")

@@ -19,7 +19,7 @@ try:
 except ImportError:
     MAILMERGE_AVAILABLE = False
 
-from utils import sanitize_filename, find_rekap_pdf, merge_pdf
+from utils import sanitize_filename, find_rekap_pdf, merge_pdf, find_skp_pdf
 
 # Monkeypatch shlex.split to handle unclosed quotes in Word mergefield formatting instructions
 original_split = shlex.split
@@ -66,7 +66,7 @@ def sanitize_word_template_switches(template_path):
         pass
 
 
-def _run_windows_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word, log):
+def _run_windows_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word, log, dir_skp=None):
     sanitize_word_template_switches(template_word)
     pythoncom.CoInitialize()
 
@@ -174,13 +174,29 @@ def _run_windows_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_
                     time.sleep(0.3)
 
             rekap = find_rekap_pdf(DIR_REKAP, bidang, nama)
+            skp_pdf = find_skp_pdf(dir_skp, nama) if dir_skp else None
 
             final_folder = os.path.join(DIR_OUTPUT, bidang)
             os.makedirs(final_folder, exist_ok=True)
 
             final = os.path.join(final_folder, f"{nama}.pdf")
 
-            merge_pdf([temp_pdf, rekap], final)
+            pdf_list = [temp_pdf]
+            if rekap and os.path.exists(rekap):
+                pdf_list.append(rekap)
+            if skp_pdf and os.path.exists(skp_pdf):
+                pdf_list.append(skp_pdf)
+                log(f"    + Melampirkan SKP Ekin: {os.path.basename(skp_pdf)}")
+            elif dir_skp:
+                log(f"    ℹ SKP Ekin tidak ditemukan untuk {nama}")
+
+            merge_pdf(pdf_list, final)
+
+            if os.path.exists(temp_pdf):
+                try:
+                    os.remove(temp_pdf)
+                except OSError:
+                    pass
 
             log(f"Selesai: {final}")
 
@@ -200,7 +216,7 @@ def _run_windows_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_
         pythoncom.CoUninitialize()
 
 
-def _run_macos_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word, log):
+def _run_macos_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word, log, dir_skp=None):
     sanitize_word_template_switches(template_word)
     log("[MACOS] Memulai proses Mail Merge nyata via docx-mailmerge2 + LibreOffice...")
     
@@ -357,16 +373,26 @@ def _run_macos_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_wo
             except OSError:
                 pass
 
-        # 3. Cari file rekap PDF
+        # 3. Cari file rekap PDF & SKP PDF
         rekap = find_rekap_pdf(DIR_REKAP, bidang, nama)
+        skp_pdf = find_skp_pdf(dir_skp, nama) if dir_skp else None
 
-        # 4. Gabungkan PDF hasil mail merge dengan PDF rekap kehadiran
+        # 4. Gabungkan PDF hasil mail merge dengan PDF rekap kehadiran dan SKP E-kinerja
         final_folder = os.path.join(DIR_OUTPUT, bidang)
         os.makedirs(final_folder, exist_ok=True)
         final = os.path.join(final_folder, f"{nama}.pdf")
 
+        pdf_list = [temp_pdf]
+        if rekap and os.path.exists(rekap):
+            pdf_list.append(rekap)
+        if skp_pdf and os.path.exists(skp_pdf):
+            pdf_list.append(skp_pdf)
+            log(f"    + Melampirkan SKP Ekin: {os.path.basename(skp_pdf)}")
+        elif dir_skp:
+            log(f"    ℹ SKP Ekin tidak ditemukan untuk {nama}")
+
         try:
-            merge_pdf([temp_pdf, rekap], final)
+            merge_pdf(pdf_list, final)
             log(f"    ✔ Selesai: {final}")
         except Exception as e:
             log(f"    ❌ Gagal menggabungkan PDF untuk {nama}: {e}")
@@ -380,7 +406,7 @@ def _run_macos_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_wo
     log("[MACOS] Semua proses mail merge selesai.")
 
 
-def process_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word, log):
+def process_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word, log, dir_skp=None):
     template_word = urllib.parse.unquote(template_word)
     template_word = os.path.normpath(template_word)
     
@@ -388,6 +414,6 @@ def process_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word,
         raise Exception(f"Template tidak ditemukan: {template_word}")
 
     if platform.system() != "Darwin" and WINDOWS_COM_AVAILABLE:
-        _run_windows_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word, log)
+        _run_windows_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word, log, dir_skp=dir_skp)
     else:
-        _run_macos_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word, log)
+        _run_macos_mail_merge(DIR_REKAP, DIR_OUTPUT, TEMP_DIR, csv_file, template_word, log, dir_skp=dir_skp)

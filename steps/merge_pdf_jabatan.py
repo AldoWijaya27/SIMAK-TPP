@@ -2,7 +2,7 @@ import os
 import glob
 import pandas as pd
 
-from utils import merge_pdf, sanitize_filename
+from utils import merge_pdf, sanitize_filename, find_skp_pdf, is_skp_already_included
 
 
 # ============================================================
@@ -51,27 +51,10 @@ def _find_pdf_for_pegawai(dir_output, nama_sanitized):
 def _find_skp_for_pegawai(dir_skp, nama_sanitized):
     """
     Cari file PDF SKP Ekin pegawai di DIR_SKP.
-    Format nama: SKP_<KADIS/SEKDIS>_<NAMA>_<PERIODE>.pdf
+    Format nama: SKP_<KADIS/SEKDIS>_<NAMA>.pdf
     Kembalikan path lengkap jika ditemukan, atau None.
     """
-    if not dir_skp or not os.path.exists(dir_skp):
-        return None
-
-    # Cari file yang sesuai pola SKP_*_<nama>_*.pdf (abaikan file gabungan dan file _TTD)
-    pattern = os.path.join(dir_skp, f"SKP_*_{nama_sanitized}_*.pdf")
-    matches = glob.glob(pattern)
-    matches = [m for m in matches if not os.path.basename(m).startswith("gabungan_") and not os.path.basename(m).endswith("_TTD.pdf")]
-    if matches:
-        return matches[0]
-
-    # Fallback pencarian dengan substring nama
-    pattern_fallback = os.path.join(dir_skp, f"*{nama_sanitized}*.pdf")
-    matches_fallback = glob.glob(pattern_fallback)
-    matches_fallback = [m for m in matches_fallback if not os.path.basename(m).startswith("gabungan_") and not os.path.basename(m).endswith("_TTD.pdf")]
-    if matches_fallback:
-        return matches_fallback[0]
-
-    return None
+    return find_skp_pdf(dir_skp, nama_sanitized)
 
 
 def merge_pdf_by_jabatan(dir_output, csv_file, bulan, tahun, log, dir_skp=None):
@@ -93,9 +76,7 @@ def merge_pdf_by_jabatan(dir_output, csv_file, bulan, tahun, log, dir_skp=None):
     if not dir_skp:
         calon_skp_list = [
             os.path.join(os.path.dirname(dir_output), "EKIN SKP"),
-            os.path.join(dir_output, "EKIN SKP"),
-            os.path.join(os.path.dirname(dir_output), "hasil_download_skp"),
-            os.path.join(dir_output, "hasil_download_skp"),
+            os.path.join(dir_output, "EKIN SKP")
         ]
         for calon in calon_skp_list:
             if os.path.exists(calon):
@@ -183,8 +164,11 @@ def merge_pdf_by_jabatan(dir_output, csv_file, bulan, tahun, log, dir_skp=None):
                 log(f"    ✔ {nama_raw} ({jabatan})")
                 semua_pdf.append(pdf_path)
                 if skp_path:
-                    log(f"      + SKP E-Kinerja dilampirkan: {os.path.basename(skp_path)}")
-                    semua_pdf.append(skp_path)
+                    if is_skp_already_included(pdf_path, skp_path):
+                        log(f"      + SKP E-Kinerja sudah terintegrasi di dokumen pegawai: {os.path.basename(skp_path)}")
+                    else:
+                        log(f"      + SKP E-Kinerja dilampirkan: {os.path.basename(skp_path)}")
+                        semua_pdf.append(skp_path)
                 elif dir_skp:
                     log(f"      ⚠ SKP E-Kinerja tidak ditemukan untuk: {nama_raw}")
             else:

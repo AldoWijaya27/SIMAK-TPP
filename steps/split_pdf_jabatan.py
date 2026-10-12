@@ -1,7 +1,7 @@
 import os
 import fitz  # PyMuPDF
 import pandas as pd
-from utils import sanitize_filename
+from utils import sanitize_filename, is_skp_already_included, is_skp_closing_page
 from steps.merge_pdf_jabatan import KELOMPOK_PIMPINAN, _find_pdf_for_pegawai, _find_skp_for_pegawai
 
 
@@ -145,6 +145,9 @@ def split_pdf_jabatan(dir_output, csv_file, bulan, tahun, log, pdf_gabungan_path
 
             nama_raw  = row["NAMA"]
             nama_safe = sanitize_filename(nama_raw)
+            nip_raw   = str(row.get("NIP", "")).strip() if "NIP" in df.columns else ""
+            if nip_raw.lower() in ["nan", "none"]:
+                nip_raw = ""
 
             jabatan = row.get("JABATAN", "") if "JABATAN" in df.columns else ""
             if pd.isna(jabatan):
@@ -175,13 +178,34 @@ def split_pdf_jabatan(dir_output, csv_file, bulan, tahun, log, pdf_gabungan_path
                         log(f"    ⚠ Gagal cek hlmn SKP '{nama_raw}': {e}.")
                         pages_skp = 0
 
-                if is_already_ttd:
-                    # File sudah pernah di-split sebelumnya (sudah mencakup TPP + SKP)
-                    pages_needed = total_doc_hlmn
+                # ── DETEKSI DINAMIS HALAMAN TERAKHIR PEGAWAI BERDASARKAN PENUTUP SKP ──
+                end_page = None
+                if skp_asli_path:
+                    # Scan dari current_page_idx ke depan mencari halaman tanda tangan penutup SKP
+                    max_scan = min(current_page_idx + 25, total_pages_gabungan)
+                    for p in range(current_page_idx, max_scan):
+                        try:
+                            p_text = doc_gabungan[p].get_text()
+                            if is_skp_closing_page(p_text, nama=nama_raw, nip=nip_raw):
+                                end_page = p
+                                break
+                        except Exception:
+                            pass
+
+                if end_page is not None:
+                    # Ditemukan halaman penutup SKP secara dinamis!
+                    pages_needed = (end_page - current_page_idx) + 1
                     pages_tpp = pages_needed - pages_skp if pages_needed >= pages_skp else pages_needed
                 else:
-                    pages_tpp = total_doc_hlmn
-                    pages_needed = pages_tpp + pages_skp
+                    # Fallback jika lembar SKP tidak terbaca teksnya atau pegawai tanpa SKP
+                    skp_sudah_tergabung = is_already_ttd or is_skp_already_included(pdf_asli_path, skp_asli_path)
+                    if skp_sudah_tergabung:
+                        pages_needed = total_doc_hlmn
+                        pages_tpp = pages_needed - pages_skp if pages_needed >= pages_skp else pages_needed
+                    else:
+                        pages_tpp = total_doc_hlmn
+                        pages_needed = pages_tpp + pages_skp
+                    end_page = current_page_idx + pages_needed - 1
 
                 if current_page_idx + pages_needed > total_pages_gabungan:
                     log(f"    ❌ Halaman di PDF Gabungan kurang untuk '{nama_raw}'! "
@@ -216,10 +240,11 @@ def split_pdf_jabatan(dir_output, csv_file, bulan, tahun, log, pdf_gabungan_path
                     if pages_skp > 0:
                         try:
                             doc_skp_ttd = fitz.open()
+                            skp_start_idx = max(current_page_idx, end_page - pages_skp + 1)
                             doc_skp_ttd.insert_pdf(
                                 doc_gabungan,
-                                from_page=current_page_idx + pages_tpp,
-                                to_page=current_page_idx + pages_needed - 1
+                                from_page=skp_start_idx,
+                                to_page=end_page
                             )
                             # Simpan di folder bidang pegawai
                             path_skp_bidang = os.path.join(folder_bidang, f"SKP_{nama_safe}_TTD.pdf")
@@ -236,8 +261,9 @@ def split_pdf_jabatan(dir_output, csv_file, bulan, tahun, log, pdf_gabungan_path
                         except Exception as e_skp:
                             log(f"    ⚠ Gagal menyimpan salinan SKP TTD terpisah untuk '{nama_raw}': {e_skp}")
 
-                    detail_hlmn = f"TPP: {pages_tpp} hlmn" + (f", SKP: {pages_skp} hlmn" if pages_skp > 0 else "")
-                    log(f"    ✔ {nama_raw} ({detail_hlmn} -> Total {pages_needed} hlmn) -> {nama_file_baru}")
+                    deteksi_info = "Deteksi Penutup SKP" if (skp_asli_path and end_page is not None) else "Jumlah Halaman Asli"
+                    detail_hlmn = f"Hal {current_page_idx + 1} s/d {end_page + 1} ({pages_needed} hlmn, {deteksi_info})"
+                    log(f"    ✔ {nama_raw} ({detail_hlmn}) -> {nama_file_baru}")
                     if pages_skp > 0:
                         log(f"      + SKP TTE diekstrak: SKP_{nama_safe}_TTD.pdf")
                 except Exception as e:
@@ -245,7 +271,7 @@ def split_pdf_jabatan(dir_output, csv_file, bulan, tahun, log, pdf_gabungan_path
                 finally:
                     doc_baru.close()
 
-                current_page_idx += pages_needed
+                current_page_idx = end_page + 1
             else:
                 log(f"    ⚠ PDF Asli tidak ditemukan untuk: {nama_raw}")
                 log(f"    ⚠ PERINGATAN: Urutan halaman akan meleset!")

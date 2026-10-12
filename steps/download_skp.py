@@ -348,7 +348,7 @@ def run_download_skp(excel_file, folder_output, log=print, periode_konstan=None,
 
                 nama = bawahan['nama']
                 skp_id = bawahan['skp_id']
-                filename = os.path.join(folder_output, f"SKP_{label}_{nama}_{periode_final}.pdf")
+                filename = os.path.join(folder_output, f"SKP_{label}_{nama}.pdf")
 
                 berhasil = download_skp(skp_id, periode_final, filename, token, label=label, tanggal_pegawai=tanggal_final, log=log)
                 if not berhasil:
