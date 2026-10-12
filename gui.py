@@ -94,8 +94,8 @@ class App:
 
         # ── Window Configuration ──
         root.title("SIMAK-TPP - Dinas Kehutanan Provinsi Lampung")
-        root.geometry("1100x750")
-        root.minsize(950, 650)
+        root.geometry("1100x780")
+        root.minsize(950, 680)
 
         ctk.set_appearance_mode("light")
         ctk.set_default_color_theme("green")
@@ -212,14 +212,15 @@ class App:
         self.step_frames = []
 
         # Definisi grup eksklusif (harus ada SEBELUM switch dibuat):
-        #   Grup A: Step 1 & 2 (index 0, 1)    — Download + Rekap Apel
-        #   Grup B: Step 3, 5, 6 (index 2, 4, 5) — Analisis, Mail Merge, Merge Jabatan
-        #   Grup C: Step 7     (index 6)       — Pecah & Distribusi TTD
-        #   Step 4: Download SKP (index 3) adalah fitur independen
+        #   Grup A: Step 1 & 2    (index 0, 1)       — Download + Rekap Apel
+        #   Grup B: Step 3, 5, 6  (index 2, 4, 5)    — Analisis, Mail Merge, Merge Jabatan
+        #   Grup C: Step 7        (index 6)          — Pecah & Distribusi TTD
+        #   Grup D: Step 4        (index 3)          — Download SKP E-Kinerja
         self._step_groups = {
             "A": [0, 1],
             "B": [2, 4, 5],
             "C": [6],
+            "D": [3],
         }
         self._index_to_group = {}
         for group_name, indices in self._step_groups.items():
@@ -306,7 +307,7 @@ class App:
         content = ctk.CTkFrame(main_container, fg_color=COLORS["content_bg"], corner_radius=0)
         content.grid(row=0, column=1, sticky="nsew")
         content.grid_columnconfigure(0, weight=1)
-        content.grid_rowconfigure(2, weight=1)  # Log console expands
+        content.grid_rowconfigure(2, weight=1, minsize=140)  # Log console expands & never disappears
 
         # ── Header Bar ──
         header = ctk.CTkFrame(content, height=50, fg_color=COLORS["card_bg"], corner_radius=0)
@@ -464,19 +465,13 @@ class App:
         period_card.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
 
         ctk.CTkLabel(
-            period_card, text="Period",
+            period_card, text="📅  Periode",
             font=ctk.CTkFont(family="Helvetica", size=13, weight="bold"),
             text_color=COLORS["text_primary"]
-        ).pack(anchor="w", padx=18, pady=(15, 5))
-
-        ctk.CTkLabel(
-            period_card, text="PERIODE",
-            font=ctk.CTkFont(size=10),
-            text_color=COLORS["text_secondary"]
-        ).pack(anchor="w", padx=18, pady=(0, 8))
+        ).pack(anchor="w", padx=18, pady=(12, 6))
 
         period_inputs = ctk.CTkFrame(period_card, fg_color="transparent")
-        period_inputs.pack(padx=18, pady=(0, 15), anchor="w")
+        period_inputs.pack(padx=18, pady=(0, 10), anchor="w")
 
         ctk.CTkLabel(
             period_inputs, text="Bulan",
@@ -1037,11 +1032,11 @@ class App:
         self._log_tab_buttons["Warning"].configure(text="⚠ Warning")
 
     def _on_step_toggle(self, toggled_index):
-        """Enforce mutual exclusivity antara 3 grup step.
-        Grup A: Step 1 & 2  (Download + Rekap Apel)
-        Grup B: Step 3, 5, 6 (Analisis, Mail Merge, Merge Jabatan)
-        Grup C: Step 7      (Pecah & Distribusi TTD)
-        Step 4: Download SKP adalah step independen.
+        """Enforce mutual exclusivity antara 4 grup step:
+        Grup A: Step 1 & 2    (Download + Rekap Apel)
+        Grup B: Step 3, 5, 6  (Analisis, Mail Merge, Merge Jabatan)
+        Grup C: Step 7        (Pecah & Distribusi TTD)
+        Grup D: Step 4        (Download SKP E-Kinerja)
         Ketika step di satu grup dinyalakan, semua step di grup lain otomatis mati.
         """
         # Safety guard: jangan jalankan jika init belum selesai
@@ -1060,7 +1055,6 @@ class App:
 
         my_group = self._index_to_group.get(toggled_index)
         if not my_group:
-            # Step independen (Step 4: Download SKP E-Kinerja)
             all_on = all(var.get() for var in self.step_vars)
             self.var_master_check.set(all_on)
             self._update_form_visibility()
@@ -1084,11 +1078,11 @@ class App:
         self._update_form_visibility()
 
     def _update_form_visibility(self):
-        """Show/hide form fields berdasarkan grup step yang aktif.
+        """Show/hide form fields berdasarkan grup step yang aktif:
         Grup A (Step 1-2): Data Pegawai, Worker Slider
         Grup B (Step 3, 5, 6): Template Excel, Kalender Kerja
         Grup C (Step 7): PDF Gabungan
-        Step 4 (Download SKP): membutuhkan Data Pegawai
+        Grup D (Step 4 - Download SKP): Data Pegawai, SKP Config (tanpa PDF Gabungan, Kalender, Template Excel)
         Folder Hasil & Periode selalu tampil.
         """
         # Safety guard
@@ -1107,46 +1101,39 @@ class App:
         else:
             active_group = active_groups[0]
 
-        # Mapping: field frame → grup mana saja yang membutuhkannya
-        field_visibility = {
-            self._frame_data_pegawai:    ["A", "ALL"],
-            self._frame_template_excel:  ["B", "ALL"],
-            self._frame_kalender_json:   ["B", "ALL"],
-            self._frame_pdf_gabungan:    ["C", "ALL"],
-        }
-
         pack_opts = {"fill": "x", "padx": 18, "pady": (0, 8)}
 
-        for frame, groups in field_visibility.items():
+        # Sembunyikan semua field input terlebih dahulu agar urutan tetap konsisten
+        fields = [
+            (self._frame_data_pegawai,   ["A", "D", "ALL"]),
+            (self._frame_template_excel, ["B", "ALL"]),
+            (self._frame_kalender_json,  ["B", "ALL"]),
+            (self._frame_pdf_gabungan,   ["C", "ALL"]),
+        ]
+
+        for frame, groups in fields:
+            frame.pack_forget()
+
+        # Tampilkan hanya field yang relevan untuk grup yang aktif
+        for frame, groups in fields:
             should_show = (active_group in groups)
-            # Jika Step Download SKP aktif, pastikan frame Data Pegawai tetap ditampilkan
             if frame == self._frame_data_pegawai and hasattr(self, 'var_download_skp') and self.var_download_skp.get():
                 should_show = True
 
             if should_show:
-                if not frame.winfo_ismapped():
-                    frame.pack(**pack_opts)
-            else:
-                if frame.winfo_ismapped():
-                    frame.pack_forget()
+                frame.pack(**pack_opts)
 
-        # Worker slider: hanya tampil untuk Grup A (Download)
+        # Worker slider: hanya tampil untuk Grup A (Download) atau ALL
         worker_pack_opts = {"fill": "x", "padx": 18, "pady": (0, 10)}
+        self.worker_section.pack_forget()
         if active_group in ["A", "ALL"]:
-            if not self.worker_section.winfo_ismapped():
-                self.worker_section.pack(**worker_pack_opts)
-        else:
-            if self.worker_section.winfo_ismapped():
-                self.worker_section.pack_forget()
+            self.worker_section.pack(**worker_pack_opts)
 
-        # Input Periode Konstan & Tanggal Pegawai: hanya tampil jika Download SKP aktif
+        # Input Periode Konstan & Tanggal Pegawai: hanya tampil jika Download SKP aktif (Grup D atau ALL)
         if hasattr(self, 'frame_skp_config') and hasattr(self, 'var_download_skp'):
-            if self.var_download_skp.get():
-                if not self.frame_skp_config.winfo_ismapped():
-                    self.frame_skp_config.pack(fill="x", padx=18, pady=(0, 15))
-            else:
-                if self.frame_skp_config.winfo_ismapped():
-                    self.frame_skp_config.pack_forget()
+            self.frame_skp_config.pack_forget()
+            if self.var_download_skp.get() or active_group in ["D", "ALL"]:
+                self.frame_skp_config.pack(fill="x", padx=18, pady=(0, 15))
 
     def _set_status(self, text, color):
         """Update the status label in the header."""
