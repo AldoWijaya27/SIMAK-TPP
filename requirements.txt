@@ -9,3 +9,5 @@ pyinstaller
 customtkinter
 tkinterdnd2
 Pillow
+requests
+playwright

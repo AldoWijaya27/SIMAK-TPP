@@ -12,6 +12,8 @@ from steps.excel_csv import excel_sheet_disiplin_ke_csv
 from steps.download import download_rekap, stop_event, stop_download
 from steps.input_spesimen import input_spesimen
 from steps.analisis import analisis_kehadiran
+from steps.download_skp import run_download_skp
+from steps.add_ttd_placeholder import process_pdfs
 from steps.merge2 import process_mail_merge
 from steps.merge_pdf_jabatan import merge_pdf_by_jabatan
 from steps.split_pdf_jabatan import split_pdf_jabatan
@@ -200,6 +202,7 @@ class App:
             ("Download Rekap\nKehadiran",        "⬇"),
             ("Rekap Kehadiran\nApel",           "📋"),
             ("Analisis\nKehadiran",              "📊"),
+            ("Download SKP\nE-Kinerja",         "📑"),
             ("Mail Merge TPP",                  "📨"),
             ("Merge PDF\nper Jabatan",          "🗂️"),
             ("Pecah & Distribusi\nDokumen TTD", "✂️"),
@@ -209,13 +212,14 @@ class App:
         self.step_frames = []
 
         # Definisi grup eksklusif (harus ada SEBELUM switch dibuat):
-        #   Grup A: Step 1 & 2 (index 0, 1)  — Download + Rekap Apel
-        #   Grup B: Step 3-5   (index 2,3,4) — Analisis → Merge Jabatan
-        #   Grup C: Step 6     (index 5)     — Pecah & Distribusi TTD
+        #   Grup A: Step 1 & 2 (index 0, 1)    — Download + Rekap Apel
+        #   Grup B: Step 3, 5, 6 (index 2, 4, 5) — Analisis, Mail Merge, Merge Jabatan
+        #   Grup C: Step 7     (index 6)       — Pecah & Distribusi TTD
+        #   Step 4: Download SKP (index 3) adalah fitur independen
         self._step_groups = {
             "A": [0, 1],
-            "B": [2, 3, 4],
-            "C": [5],
+            "B": [2, 4, 5],
+            "C": [6],
         }
         self._index_to_group = {}
         for group_name, indices in self._step_groups.items():
@@ -282,9 +286,10 @@ class App:
         self.var_download      = self.step_vars[0]
         self.var_rekap_apel    = self.step_vars[1]
         self.var_analisis      = self.step_vars[2]
-        self.var_mailmerge     = self.step_vars[3]
-        self.var_merge_jabatan = self.step_vars[4]
-        self.var_split_pdf     = self.step_vars[5]
+        self.var_download_skp  = self.step_vars[3]
+        self.var_mailmerge     = self.step_vars[4]
+        self.var_merge_jabatan = self.step_vars[5]
+        self.var_split_pdf     = self.step_vars[6]
 
 
 
@@ -935,8 +940,9 @@ class App:
     def _on_step_toggle(self, toggled_index):
         """Enforce mutual exclusivity antara 3 grup step.
         Grup A: Step 1 & 2  (Download + Rekap Apel)
-        Grup B: Step 3-5    (Analisis → Merge Jabatan)
-        Grup C: Step 6      (Pecah & Distribusi TTD)
+        Grup B: Step 3, 5, 6 (Analisis, Mail Merge, Merge Jabatan)
+        Grup C: Step 7      (Pecah & Distribusi TTD)
+        Step 4: Download SKP adalah step independen.
         Ketika step di satu grup dinyalakan, semua step di grup lain otomatis mati.
         """
         # Safety guard: jangan jalankan jika init belum selesai
@@ -948,11 +954,17 @@ class App:
 
         is_on = self.step_vars[toggled_index].get()
         if not is_on:
-            # Jika user mematikan step, tidak perlu matikan grup lain
+            all_on = all(var.get() for var in self.step_vars)
+            self.var_master_check.set(all_on)
+            self._update_form_visibility()
             return
 
         my_group = self._index_to_group.get(toggled_index)
         if not my_group:
+            # Step independen (Step 4: Download SKP E-Kinerja)
+            all_on = all(var.get() for var in self.step_vars)
+            self.var_master_check.set(all_on)
+            self._update_form_visibility()
             return
 
         # Nyalakan SEMUA step di grup yang sama
@@ -974,9 +986,10 @@ class App:
 
     def _update_form_visibility(self):
         """Show/hide form fields berdasarkan grup step yang aktif.
-        Grup A (Step 1-2): Data Pegawai, Ekin & Apel, Worker Slider
-        Grup B (Step 3-5): Template Excel, Ekin & Apel, Kalender Kerja
-        Grup C (Step 6):   PDF Gabungan
+        Grup A (Step 1-2): Data Pegawai, Worker Slider
+        Grup B (Step 3, 5, 6): Template Excel, Kalender Kerja
+        Grup C (Step 7): PDF Gabungan
+        Step 4 (Download SKP): membutuhkan Data Pegawai
         Folder Hasil & Periode selalu tampil.
         """
         # Safety guard
@@ -1006,7 +1019,12 @@ class App:
         pack_opts = {"fill": "x", "padx": 18, "pady": (0, 8)}
 
         for frame, groups in field_visibility.items():
-            if active_group in groups:
+            should_show = (active_group in groups)
+            # Jika Step Download SKP aktif, pastikan frame Data Pegawai tetap ditampilkan
+            if frame == self._frame_data_pegawai and hasattr(self, 'var_download_skp') and self.var_download_skp.get():
+                should_show = True
+
+            if should_show:
                 if not frame.winfo_ismapped():
                     frame.pack(**pack_opts)
             else:
@@ -1050,6 +1068,7 @@ class App:
                 self.var_download.get(),
                 self.var_rekap_apel.get(),
                 self.var_analisis.get(),
+                self.var_download_skp.get(),
                 self.var_mailmerge.get(),
                 self.var_merge_jabatan.get(),
                 self.var_split_pdf.get()
@@ -1068,14 +1087,17 @@ class App:
             DIR_REKAP = os.path.join(base_dir, "REKAP KEHADIRAN")
             DIR_REKAP_DITANDATANGANI = os.path.join(base_dir, "REKAP KEHADIRAN DITANDATANGANI")
             DIR_OUTPUT = os.path.join(base_dir, "PERHITUNGAN TPP")
+            DIR_SKP = os.path.join(base_dir, "hasil_download_skp")
             TEMP_DIR = os.path.join(base_dir, "TEMP")
 
             DIR_REKAP_DITANDATANGANI = os.path.abspath(DIR_REKAP_DITANDATANGANI)
             DIR_OUTPUT = os.path.abspath(DIR_OUTPUT)
+            DIR_SKP = os.path.abspath(DIR_SKP)
             TEMP_DIR = os.path.abspath(TEMP_DIR)
 
             os.makedirs(DIR_REKAP_DITANDATANGANI, exist_ok=True)
             os.makedirs(DIR_OUTPUT, exist_ok=True)
+            os.makedirs(DIR_SKP, exist_ok=True)
             os.makedirs(TEMP_DIR, exist_ok=True)
 
             excel = self.entry_template_excel.get()
@@ -1104,7 +1126,7 @@ class App:
                 if not excel_pegawai or not os.path.exists(excel_pegawai):
                     show_err("File Data Pegawai Excel belum dipilih atau file tidak ditemukan.")
                     return
-                self.log("── [1/6] Download Rekap Kehadiran ──")
+                self.log("── [1/7] Download Rekap Kehadiran ──")
                 max_workers = self.worker_var.get()
                 download_rekap(excel_pegawai, DIR_REKAP, bulan, tahun, self.log, max_workers)
 
@@ -1145,7 +1167,7 @@ class App:
                 if not excel_pegawai or not os.path.exists(excel_pegawai):
                     show_err("File Data Pegawai Excel belum dipilih atau file tidak ditemukan.")
                     return
-                self.log("── [2/6] Rekap Kehadiran Apel ──")
+                self.log("── [2/7] Rekap Kehadiran Apel ──")
                 rekap_kehadiran_apel(DIR_REKAP_DITANDATANGANI, excel_pegawai, bulan, tahun, None, self.log, ekin_apel)
 
             # STEP 3 — ANALISIS KEHADIRAN
@@ -1155,7 +1177,7 @@ class App:
                 if not excel or not os.path.exists(excel):
                     show_err("Template Excel belum dipilih atau file tidak ditemukan.")
                     return
-                self.log("── [3/6] Analisis Kehadiran ──")
+                self.log("── [3/7] Analisis Kehadiran ──")
                 analisis_kehadiran(DIR_REKAP_DITANDATANGANI, excel, output_excel, self.log, json_kalender)
 
             # GABUNG EKIN & APEL (OTOMATIS TANPA TOGGLE)
@@ -1247,7 +1269,22 @@ class App:
                     import shutil
                     shutil.copy(output_excel, output_template_ready)
 
-            # STEP 4 — MAIL MERGE TPP (Termasuk Generate CSV Otomatis)
+            # STEP 4 — DOWNLOAD SKP E-KINERJA & ADD TTD PLACEHOLDER
+            if self.var_download_skp.get():
+                if stop_event.is_set():
+                    return
+                if not excel_pegawai or not os.path.exists(excel_pegawai):
+                    show_err("File Data Pegawai Excel belum dipilih atau file tidak ditemukan.")
+                    return
+                self.log("── [4/7] Download SKP E-Kinerja & TTD Placeholder ──")
+                berhasil_skp = run_download_skp(excel_pegawai, DIR_SKP, self.log)
+                if stop_event.is_set():
+                    return
+
+                self.log("  ✍ Menambahkan placeholder TTD (${ttd_pengirim}) pada dokumen SKP...")
+                process_pdfs(DIR_SKP, log=self.log)
+
+            # STEP 5 — MAIL MERGE TPP (Termasuk Generate CSV Otomatis)
             if self.var_mailmerge.get():
                 if stop_event.is_set():
                     return
@@ -1262,10 +1299,10 @@ class App:
                 self.log("  📄 Generating CSV (otomatis)...")
                 excel_sheet_disiplin_ke_csv(output_template_ready, base_dir)
 
-                self.log("── [4/6] Mail Merge TPP ──")
+                self.log("── [5/7] Mail Merge TPP ──")
                 process_mail_merge(DIR_REKAP_DITANDATANGANI, DIR_OUTPUT, TEMP_DIR, csv_output, word, self.log)
 
-            # STEP 5 — MERGE PDF PER JABATAN
+            # STEP 6 — MERGE PDF PER JABATAN
             if self.var_merge_jabatan.get():
                 if stop_event.is_set():
                     return
@@ -1276,10 +1313,10 @@ class App:
                     else:
                         show_err("File CSV (Disiplin_TPP_Lengkap.csv) / Disiplin_TPP_Lengkap.xlsx tidak ditemukan. Jalankan step sebelumnya terlebih dahulu.", title="Prasyarat Belum Ada")
                         return
-                self.log("── [5/6] Merge PDF per Jabatan ──")
-                merge_pdf_by_jabatan(DIR_OUTPUT, csv_output, bulan, tahun, self.log)
+                self.log("── [6/7] Merge PDF per Jabatan ──")
+                merge_pdf_by_jabatan(DIR_OUTPUT, csv_output, bulan, tahun, self.log, dir_skp=DIR_SKP)
 
-            # STEP 6 — PECAH & DISTRIBUSI DOKUMEN TTD
+            # STEP 7 — PECAH & DISTRIBUSI DOKUMEN TTD
             if self.var_split_pdf.get():
                 if stop_event.is_set():
                     return
@@ -1303,7 +1340,7 @@ class App:
                         show_err("File CSV (Disiplin_TPP_Lengkap.csv) tidak ditemukan di Folder Hasil.\n\nFile CSV ini diperlukan untuk memetakan halaman PDF ke masing-masing pegawai. Jalankan Step 3 & 4 terlebih dahulu.", title="Prasyarat Belum Ada")
                         return
 
-                self.log("── [6/6] Pecah & Distribusi Dokumen TTD ──")
+                self.log("── [7/7] Pecah & Distribusi Dokumen TTD ──")
                 split_pdf_jabatan(DIR_OUTPUT, csv_output, bulan, tahun, self.log, pdf_gabungan)
 
             # Jika berhasil semua

@@ -40,9 +40,38 @@ def _find_pdf_for_pegawai(dir_output, nama_sanitized):
     return matches[0] if matches else None
 
 
-def merge_pdf_by_jabatan(dir_output, csv_file, bulan, tahun, log):
+def _find_skp_for_pegawai(dir_skp, nama_sanitized):
+    """
+    Cari file PDF SKP Ekin pegawai di DIR_SKP.
+    Format nama: SKP_<KADIS/SEKDIS>_<NAMA>_<PERIODE>.pdf
+    Kembalikan path lengkap jika ditemukan, atau None.
+    """
+    if not dir_skp or not os.path.exists(dir_skp):
+        return None
+
+    # Cari file yang sesuai pola SKP_*_<nama>_*.pdf (abaikan file gabungan)
+    pattern = os.path.join(dir_skp, f"SKP_*_{nama_sanitized}_*.pdf")
+    matches = glob.glob(pattern)
+    matches = [m for m in matches if not os.path.basename(m).startswith("gabungan_")]
+    if matches:
+        return matches[0]
+
+    # Fallback pencarian dengan substring nama
+    pattern_fallback = os.path.join(dir_skp, f"*{nama_sanitized}*.pdf")
+    matches_fallback = glob.glob(pattern_fallback)
+    matches_fallback = [m for m in matches_fallback if not os.path.basename(m).startswith("gabungan_")]
+    if matches_fallback:
+        return matches_fallback[0]
+
+    return None
+
+
+def merge_pdf_by_jabatan(dir_output, csv_file, bulan, tahun, log, dir_skp=None):
     """
     Gabungkan PDF berdasarkan JABATAN PIMPINAN menjadi file-file terpisah.
+    Urutan dokumen per pegawai:
+      1. Laporan TPP (TTE Srikandi) + Rekap Kehadiran
+      2. Dokumen SKP Ekin Pegawai
 
     Output:
       - Merge_Pejabat_KaDis_{bulan}_{tahun}.pdf
@@ -51,6 +80,20 @@ def merge_pdf_by_jabatan(dir_output, csv_file, bulan, tahun, log):
         → pegawai yang pimpinannya SEKRETARIS
     """
     log("── Memulai proses Merge PDF per Jabatan Pimpinan ──")
+
+    # Deteksi otomatis dir_skp jika belum diberikan
+    if not dir_skp:
+        calon_skp_1 = os.path.join(os.path.dirname(dir_output), "hasil_download_skp")
+        calon_skp_2 = os.path.join(dir_output, "hasil_download_skp")
+        if os.path.exists(calon_skp_1):
+            dir_skp = calon_skp_1
+        elif os.path.exists(calon_skp_2):
+            dir_skp = calon_skp_2
+
+    if dir_skp and os.path.exists(dir_skp):
+        log(f"  📂 Folder SKP Ekin terdeteksi: {os.path.basename(dir_skp)}")
+    else:
+        log("  ℹ Folder SKP Ekin tidak ditemukan (merge hanya dokumen TPP & kehadiran).")
 
     # --- Validasi CSV ---
     if not csv_file or not os.path.exists(csv_file):
@@ -122,10 +165,16 @@ def merge_pdf_by_jabatan(dir_output, csv_file, bulan, tahun, log):
                 jabatan = ""
 
             pdf_path = _find_pdf_for_pegawai(dir_output, nama_safe)
+            skp_path = _find_skp_for_pegawai(dir_skp, nama_safe) if dir_skp else None
 
             if pdf_path:
                 log(f"    ✔ {nama_raw} ({jabatan})")
                 semua_pdf.append(pdf_path)
+                if skp_path:
+                    log(f"      + SKP E-Kinerja dilampirkan: {os.path.basename(skp_path)}")
+                    semua_pdf.append(skp_path)
+                elif dir_skp:
+                    log(f"      ⚠ SKP E-Kinerja tidak ditemukan untuk: {nama_raw}")
             else:
                 log(f"    ⚠ PDF tidak ditemukan untuk: {nama_raw}")
 
@@ -137,7 +186,7 @@ def merge_pdf_by_jabatan(dir_output, csv_file, bulan, tahun, log):
         nama_file_output = f"{nama_file_base}_{periode_str}.pdf"
         output_path = os.path.join(dir_output, nama_file_output)
 
-        log(f"\n  Menggabungkan {len(semua_pdf)} PDF menjadi {nama_file_output}...")
+        log(f"\n  Menggabungkan {len(semua_pdf)} dokumen PDF menjadi {nama_file_output}...")
 
         try:
             merge_pdf(semua_pdf, output_path)
