@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+from utils import set_precision_as_displayed
 
 def recalculate_disiplin_sheet(ws):
     headers = {}
@@ -310,6 +311,7 @@ def excel_sheet_disiplin_ke_csv(file_excel, output_folder):
             else:
                 ws.cell(r, tte_col).value = ""
 
+    set_precision_as_displayed(wb)
     try:
         wb.save(file_excel)
     except PermissionError:

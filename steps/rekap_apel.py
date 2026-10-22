@@ -9,6 +9,7 @@ from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 from steps.work_calendar import parse_tanggal_indonesia
+from utils import set_precision_as_displayed
 
 
 # =========================================================
@@ -471,6 +472,7 @@ def rekap_kehadiran_apel(dir_rekap, excel_pegawai, bulan, tahun, output_path, lo
         from utils import sanitize_filename
         nama_file_output = sanitize_filename(f"Rekap_Apel_{bidang}_{bulan}_{tahun}.xlsx")
         path_output_bidang = os.path.join(folder_bidang, nama_file_output)
+        set_precision_as_displayed(wb_bidang)
         wb_bidang.save(path_output_bidang)
         wb_bidang.close()
         output_files.append(path_output_bidang)
@@ -503,6 +505,7 @@ def rekap_kehadiran_apel(dir_rekap, excel_pegawai, bulan, tahun, output_path, lo
                             ws_ekin.cell(row=r, column=col_tma).value = all_nip_to_tk[nip_clean]
                             updated_count += 1
 
+                set_precision_as_displayed(wb_ekin)
                 wb_ekin.save(path_ekin_output)
                 wb_ekin.close()
                 log(f"  ✅ Berhasil update {updated_count} pegawai di file Ekin & Apel → {path_ekin_output}")
@@ -581,6 +584,7 @@ def rekap_kehadiran_apel(dir_rekap, excel_pegawai, bulan, tahun, output_path, lo
                         max_len = len(val_str)
                 ws_new.column_dimensions[col_letter].width = max(max_len + 4, 12)
 
+            set_precision_as_displayed(wb_new)
             wb_new.save(path_ekin_output)
             wb_new.close()
             log(f"  ✅ File Ekin & Apel Terisi otomatis dibuat ({no_counter - 1} pegawai) → {path_ekin_output}")

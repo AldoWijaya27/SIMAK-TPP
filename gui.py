@@ -1314,7 +1314,7 @@ class App:
                     return
                 self.log("  🔗 Menggabungkan Data Ekin & Apel (otomatis)...")
 
-                from utils import sanitize_filename
+                from utils import sanitize_filename, set_precision_as_displayed
                 path_ekin_terisi = os.path.join(DIR_REKAP_DITANDATANGANI, sanitize_filename(f"Ekin_Apel_Terisi_{bulan}_{tahun}.xlsx"))
 
                 if not os.path.exists(path_ekin_terisi) and excel_pegawai and os.path.exists(excel_pegawai):
@@ -1377,6 +1377,7 @@ class App:
                                     max_len = len(val_str)
                             ws_new.column_dimensions[col_letter].width = max(max_len + 4, 12)
 
+                        set_precision_as_displayed(wb_new)
                         wb_new.save(path_ekin_terisi)
                         wb_new.close()
                     except Exception:

@@ -1,6 +1,7 @@
 import pandas as pd
 from openpyxl import load_workbook
 import shutil
+from utils import set_precision_as_displayed
 
 
 def merge_ekin_apel(file_sumber, file_utama, output_path):
@@ -81,7 +82,9 @@ def merge_ekin_apel(file_sumber, file_utama, output_path):
         # ==========================================================
         # 6️⃣ Simpan file (struktur tetap aman)
         # ==========================================================
+        set_precision_as_displayed(wb)
         wb.save(output_path)
+        wb.close()
 
         return True, f"Berhasil update {updated_count} data berdasarkan NIP."
 

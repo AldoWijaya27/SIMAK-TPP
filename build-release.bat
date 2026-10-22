@@ -3,6 +3,11 @@ setlocal
 
 cd /d "%~dp0"
 
+if exist "dist\SIMAK-TPP" (
+    echo Membersihkan folder build lama...
+    rmdir /s /q "dist\SIMAK-TPP"
+)
+
 echo [1/4] Building application with PyInstaller...
 python -m PyInstaller "SIMAK-TPP.spec" --noconfirm --clean
 if errorlevel 1 (

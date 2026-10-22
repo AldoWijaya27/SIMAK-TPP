@@ -8,6 +8,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Border, Side
 
 from steps.work_calendar import WorkCalendar, parse_tanggal_indonesia
+from utils import set_precision_as_displayed
 
 
 # =========================================================
@@ -265,6 +266,7 @@ def analisis_kehadiran(dir_rekap, template_excel, output_excel, log, json_kalend
             ws.cell(row, map_col["HariKerja"]).value = data["HariKerja"]
 
     log(f"Menulis dan menyimpan hasil ke Excel: {output_excel}")
+    set_precision_as_displayed(wb)
     wb.save(output_excel)
     wb.close()
 

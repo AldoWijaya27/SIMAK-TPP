@@ -212,3 +212,20 @@ def remove_trailing_blank_pages(pdf_path):
         return False
 
 
+def set_precision_as_displayed(wb):
+    """
+    Mengaktifkan opsi 'Set precision as displayed' (Atur presisi seperti yang ditampilkan)
+    pada file Excel workbook (openpyxl).
+    Dalam standar SpreadsheetML (OpenXML), opsi ini diatur pada elemen
+    <calcPr fullPrecision="0" /> (fullPrecision=False).
+    """
+    try:
+        from openpyxl.workbook.properties import CalcProperties
+        if getattr(wb, 'calculation', None) is None:
+            wb.calculation = CalcProperties()
+        wb.calculation.fullPrecision = False
+        wb.calculation.fullCalcOnLoad = True
+    except Exception:
+        pass
+
+
