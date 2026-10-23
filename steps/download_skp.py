@@ -2,12 +2,24 @@ import requests
 import time
 import os
 import sys
+import random
 import subprocess
 import pandas as pd
 import concurrent.futures
 from playwright.sync_api import sync_playwright
 
 from steps.download import stop_event
+
+def interruptible_sleep(seconds):
+    """Tidur dengan pengecekan stop_event secara berkala agar responsif terhadap pembatalan."""
+    step = 0.25
+    elapsed = 0.0
+    while elapsed < seconds:
+        if stop_event.is_set():
+            return False
+        time.sleep(min(step, seconds - elapsed))
+        elapsed += step
+    return True
 
 # --- KONFIGURASI BAWAAN ---
 LOKASI = "BANDAR LAMPUNG"
@@ -37,8 +49,10 @@ def get_app_dir():
         return os.path.dirname(sys.executable)
     return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-def download_skp(skp_id, periode, output_filename, auth_token, label="", tanggal_pegawai=None, log=print):
+def download_skp(skp_id, periode, output_filename, auth_token, label="", tanggal_pegawai=None, log=print, session=None, error_info=None):
     if stop_event.is_set():
+        if error_info is not None:
+            error_info['reason'] = "Dibatalkan oleh pengguna"
         return False
 
     prefix = f"[{label}] " if label else ""
@@ -54,7 +68,7 @@ def download_skp(skp_id, periode, output_filename, auth_token, label="", tanggal
 
     log(f"{prefix}[*] Memulai download SKP ID: {skp_id}")
 
-    # 1. Request Cetak (Antre)
+    # 1. Request Cetak (Antre) dengan Queue-Clearing Backoff & Fast-Skip Error Permanen
     url_cetak = f"https://kinerja.bkn.go.id/api/skp/{skp_id}/penilaian/{periode}/cetak"
     payload = {
         "lokasi": LOKASI,
@@ -63,45 +77,170 @@ def download_skp(skp_id, periode, output_filename, auth_token, label="", tanggal
         "tanggal_pegawai": tgl_peg
     }
 
-    try:
+    http = session if session else requests
+    job_id = None
+    maks_retry_job = 4
+
+    for attempt in range(1, maks_retry_job + 1):
         if stop_event.is_set():
-            return False
-        resp_cetak = requests.post(url_cetak, json=payload, headers=headers, timeout=30)
-        if resp_cetak.status_code != 200:
-            log(f"{prefix}❌ Error request cetak: {resp_cetak.text}")
+            if error_info is not None:
+                error_info['reason'] = "Dibatalkan oleh pengguna"
             return False
 
-        data_cetak = resp_cetak.json()
-        job_id = data_cetak.get("job_id")
-        if not job_id:
-            log(f"{prefix}❌ Tidak mendapatkan job_id dari response!")
-            return False
+        try:
+            resp_cetak = http.post(url_cetak, json=payload, headers=headers, timeout=30)
+            
+            if resp_cetak.status_code == 200:
+                try:
+                    data_cetak = resp_cetak.json()
+                    job_id = data_cetak.get("job_id")
+                    if job_id:
+                        break  # Berhasil memperoleh job_id
+                    else:
+                        msg = data_cetak.get("message") or resp_cetak.text[:120]
+                        log(f"{prefix}⚠️ BKN belum memberikan job_id: {msg}")
 
-    except Exception as e:
-        log(f"{prefix}❌ Terjadi kesalahan jaringan saat request cetak: {e}")
+                        # Cek apakah error bersifat permanen (misal periode penilaian tidak ditemukan / belum dinilai)
+                        pesan_lower = msg.lower()
+                        kata_kunci_permanen = ["tidak ditemukan", "belum dinilai", "tidak ada", "belum disetujui", "belum final", "belum dibuat", "tidak berhak"]
+                        if any(k in pesan_lower for k in kata_kunci_permanen):
+                            log(f"{prefix}ℹ️ Error permanen dari BKN ({msg}). Melewati percobaan ulang.")
+                            if error_info is not None:
+                                error_info['reason'] = msg
+                                error_info['is_permanent'] = True
+                            return False
+                except Exception as je:
+                    log(f"{prefix}⚠️ [Coba {attempt}/{maks_retry_job}] Format JSON respons cetak tidak sesuai: {je}")
+                    if error_info is not None:
+                        error_info['reason'] = f"Gagal membaca respons BKN: {je}"
+            elif resp_cetak.status_code == 429:
+                log(f"{prefix}⚠️ [Coba {attempt}/{maks_retry_job}] Terkena Rate Limit BKN (HTTP 429), jeda sejenak...")
+                if error_info is not None:
+                    error_info['reason'] = "Rate limit server BKN (HTTP 429)"
+                if not interruptible_sleep(6 + random.uniform(1.0, 3.0)):
+                    return False
+                continue
+            elif resp_cetak.status_code in [400, 404, 422]:
+                msg = resp_cetak.text[:120]
+                log(f"{prefix}⚠️ Server BKN HTTP {resp_cetak.status_code}: {msg}")
+                pesan_lower = msg.lower()
+                kata_kunci_permanen = ["tidak ditemukan", "belum dinilai", "tidak ada", "periode", "tidak berhak"]
+                if any(k in pesan_lower for k in kata_kunci_permanen):
+                    log(f"{prefix}ℹ️ Data tidak ditemukan di BKN ({msg}). Melewati percobaan ulang.")
+                    if error_info is not None:
+                        error_info['reason'] = msg
+                        error_info['is_permanent'] = True
+                    return False
+                if error_info is not None:
+                    error_info['reason'] = f"HTTP {resp_cetak.status_code}: {msg}"
+            else:
+                msg = resp_cetak.text[:120]
+                log(f"{prefix}⚠️ [Coba {attempt}/{maks_retry_job}] Server BKN HTTP {resp_cetak.status_code}: {msg}")
+                if error_info is not None:
+                    error_info['reason'] = f"HTTP {resp_cetak.status_code}: {msg}"
+
+        except requests.exceptions.Timeout:
+            log(f"{prefix}⚠️ [Coba {attempt}/{maks_retry_job}] Request antrean cetak timeout (>30s)")
+            if error_info is not None:
+                error_info['reason'] = "Timeout request antrean ke server BKN (>30s)"
+        except Exception as e:
+            log(f"{prefix}⚠️ [Coba {attempt}/{maks_retry_job}] Kesalahan jaringan request cetak: {e}")
+            if error_info is not None:
+                error_info['reason'] = f"Kesalahan jaringan: {e}"
+
+        if attempt < maks_retry_job:
+            # Beri jeda agar worker server BKN menyelesaikan antrean yang menggantung
+            jeda = attempt * 3 + random.uniform(0.5, 1.5)
+            log(f"{prefix}⏳ Menunggu {jeda:.1f}s sebelum meminta ulang job_id...")
+            if not interruptible_sleep(jeda):
+                return False
+
+    if not job_id:
+        log(f"{prefix}❌ Gagal mendapatkan job_id setelah {maks_retry_job}x percobaan.")
+        if error_info is not None and 'reason' not in error_info:
+            error_info['reason'] = "Gagal mendapatkan job_id dari server BKN"
         return False
 
-    # 2. Skip Polling Status (jeda singkat)
-    time.sleep(3)
-    if stop_event.is_set():
+    # 2. Polling Status Antrean Cetak hingga status == "ready" (ready: true)
+    url_status = f"https://kinerja.bkn.go.id/api/skp/cetak_status/{job_id}"
+    maks_wait_status = 35  # Polling hingga ~45 detik
+    is_ready = False
+
+    for s_attempt in range(1, maks_wait_status + 1):
+        if stop_event.is_set():
+            if error_info is not None:
+                error_info['reason'] = "Dibatalkan oleh pengguna"
+            return False
+
+        if not interruptible_sleep(1.5):
+            return False
+
+        try:
+            resp_status = http.get(url_status, headers=headers, timeout=20)
+            if resp_status.status_code == 200:
+                data_status = resp_status.json()
+                # Respons resmi: {"status":"ready","ready":true,"error":null}
+                if data_status.get("ready") is True or data_status.get("status") == "ready":
+                    is_ready = True
+                    break
+
+                err_bkn = data_status.get("error")
+                if err_bkn:
+                    log(f"{prefix}❌ Error rendering dokumen dari BKN: {err_bkn}")
+                    if error_info is not None:
+                        error_info['reason'] = f"BKN render error: {err_bkn}"
+                        error_info['is_permanent'] = True
+                    return False
+
+                status_str = data_status.get("status", "queued")
+                if s_attempt % 5 == 0:
+                    log(f"{prefix}⏳ Menunggu antrean dokumen selesai di server BKN ({status_str})...")
+            else:
+                if s_attempt % 5 == 0:
+                    log(f"{prefix}⚠️ Cek status cetak HTTP {resp_status.status_code} (Coba {s_attempt}/{maks_wait_status})")
+        except Exception:
+            pass  # Jaringan fluktuatif sesaat saat polling
+
+    if not is_ready:
+        log(f"{prefix}❌ Dokumen belum siap (timeout) di server BKN untuk job_id: {job_id}")
+        if error_info is not None:
+            error_info['reason'] = "Timeout menunggu dokumen ready di server BKN"
         return False
 
-    # 3. Download Dokumen (Biner)
+    # 3. Download Dokumen PDF (setelah dipastikan ready: true)
     url_download = f"https://kinerja.bkn.go.id/api/skp/cetak_download/{job_id}"
-    try:
-        resp_download = requests.get(url_download, headers=headers, timeout=60)
+    maks_retry_dl = 3
 
-        if resp_download.status_code == 200:
-            with open(output_filename, 'wb') as f:
-                f.write(resp_download.content)
-            log(f"{prefix}✔ Berhasil menyimpan: {os.path.basename(output_filename)}")
-            return True
-        else:
-            log(f"{prefix}❌ Gagal download dokumen. Status code: {resp_download.status_code}")
+    for dl_attempt in range(1, maks_retry_dl + 1):
+        if stop_event.is_set():
+            if error_info is not None:
+                error_info['reason'] = "Dibatalkan oleh pengguna"
             return False
-    except Exception as e:
-        log(f"{prefix}❌ Terjadi kesalahan saat download dokumen: {e}")
-        return False
+
+        try:
+            resp_download = http.get(url_download, headers=headers, timeout=60)
+            if resp_download.status_code == 200:
+                content = resp_download.content
+                if content.startswith(b"%PDF") or (len(content) > 1000 and not content.strip().startswith(b"{")):
+                    with open(output_filename, 'wb') as f:
+                        f.write(content)
+                    log(f"{prefix}✔ Berhasil menyimpan: {os.path.basename(output_filename)}")
+                    return True
+                else:
+                    log(f"{prefix}⚠️ File download bukan biner PDF valid (Coba {dl_attempt}/{maks_retry_dl})")
+            else:
+                log(f"{prefix}⚠️ Gagal download HTTP {resp_download.status_code} (Coba {dl_attempt}/{maks_retry_dl})")
+        except Exception as e:
+            log(f"{prefix}⚠️ Error download dokumen: {e}")
+
+        if dl_attempt < maks_retry_dl:
+            if not interruptible_sleep(2.0):
+                return False
+
+    log(f"{prefix}❌ Gagal download dokumen SKP untuk job_id: {job_id}")
+    if error_info is not None and 'reason' not in error_info:
+        error_info['reason'] = "Gagal mengunduh file biner PDF"
+    return False
 
 def setup_playwright_env():
     """Memastikan path browser Playwright terkonfigurasi dengan benar di environment PyInstaller / Windows."""
@@ -331,37 +470,62 @@ def run_download_skp(excel_file, folder_output, log=print, periode_konstan=None,
         log(f"[*] Memulai download untuk {label.upper()} ({len(antrean)} orang)...")
         antrean_berjalan = antrean
         percobaan = 1
+        session = requests.Session()
+        semua_gagal_permanen = []
 
-        while antrean_berjalan and percobaan <= maks_percobaan:
-            if stop_event.is_set():
-                break
-
-            if percobaan > 1:
-                log(f"[*] Mengulang yang gagal - {label} (Percobaan {percobaan}/{maks_percobaan})...")
-                time.sleep(5)
-
-            antrean_gagal = []
-
-            for bawahan in antrean_berjalan:
+        try:
+            while antrean_berjalan and percobaan <= maks_percobaan:
                 if stop_event.is_set():
                     break
 
-                nama = bawahan['nama']
-                skp_id = bawahan['skp_id']
-                filename = os.path.join(folder_output, f"SKP_{label}_{nama}.pdf")
+                if percobaan > 1:
+                    log(f"[*] Mengulang yang gagal sementara - {label} (Percobaan {percobaan}/{maks_percobaan}, {len(antrean_berjalan)} orang)...")
+                    if not interruptible_sleep(5):
+                        break
 
-                berhasil = download_skp(skp_id, periode_final, filename, token, label=label, tanggal_pegawai=tanggal_final, log=log)
-                if not berhasil:
-                    antrean_gagal.append(bawahan)
+                antrean_gagal_siklus = []
 
-            antrean_berjalan = antrean_gagal
-            percobaan += 1
+                for bawahan in antrean_berjalan:
+                    if stop_event.is_set():
+                        break
 
-        return antrean_berjalan
+                    nama = bawahan['nama']
+                    skp_id = bawahan['skp_id']
+                    filename = os.path.join(folder_output, f"SKP_{label}_{nama}.pdf")
+
+                    err_info = {}
+                    berhasil = download_skp(
+                        skp_id, periode_final, filename, token,
+                        label=label, tanggal_pegawai=tanggal_final, log=log, session=session,
+                        error_info=err_info
+                    )
+                    if not berhasil:
+                        item_gagal = dict(bawahan)
+                        item_gagal['alasan'] = err_info.get('reason', 'Gagal memproses')
+                        item_gagal['permanen'] = err_info.get('is_permanent', False)
+
+                        if item_gagal['permanen']:
+                            # Langsung tandai permanen, JANGAN diulang di percobaan 2 & 3
+                            semua_gagal_permanen.append(item_gagal)
+                        else:
+                            antrean_gagal_siklus.append(item_gagal)
+
+                    # Jeda santai antar-pegawai agar antrean di server BKN benar-benar bersih
+                    if not stop_event.is_set():
+                        interruptible_sleep(random.uniform(1.5, 2.5))
+
+                antrean_berjalan = antrean_gagal_siklus
+                percobaan += 1
+        finally:
+            session.close()
+
+        total_list_gagal = semua_gagal_permanen + antrean_berjalan
+        return total_list_gagal
 
     log("[*] Memulai download paralel untuk Kadis & Sekdis...")
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         future_kadis = executor.submit(proses_antrean, antrean_kadis, auth_token_kadis, "KADIS")
+        time.sleep(1)  # Jeda inisiasi agar kedua thread tidak menembak request pertama di milidetik yang persis sama
         future_sekdis = executor.submit(proses_antrean, antrean_sekdis, auth_token_sekdis, "SEKDIS")
 
         gagal_kadis = future_kadis.result()
@@ -373,9 +537,22 @@ def run_download_skp(excel_file, folder_output, log=print, periode_konstan=None,
 
     total_gagal = len(gagal_kadis) + len(gagal_sekdis)
     if total_gagal > 0:
-        log(f"⚠️ Terdapat {total_gagal} dokumen SKP yang gagal didownload.")
+        log("\n" + "=" * 65)
+        log(f"⚠️ REKAPITULASI: Terdapat {total_gagal} pegawai yang gagal didownload:")
+        log("=" * 65)
+        if gagal_kadis:
+            log("📌 Bawahan Kepala Dinas (KADIS):")
+            for idx, p in enumerate(gagal_kadis, 1):
+                alasan = p.get('alasan', 'Gagal memproses')
+                log(f"   {idx}. {p['nama']} (Alasan: {alasan})")
+        if gagal_sekdis:
+            log("📌 Bawahan Sekretaris (SEKDIS):")
+            for idx, p in enumerate(gagal_sekdis, 1):
+                alasan = p.get('alasan', 'Gagal memproses')
+                log(f"   {idx}. {p['nama']} (Alasan: {alasan})")
+        log("=" * 65 + "\n")
     else:
-        log("✅ Seluruh dokumen SKP Kadis & Sekdis berhasil didownload 100%!")
+        log("\n✅ Seluruh dokumen SKP Kadis & Sekdis berhasil didownload 100%!\n")
 
     return True
 

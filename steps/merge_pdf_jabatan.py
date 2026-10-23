@@ -137,14 +137,12 @@ def merge_pdf_by_jabatan(dir_output, csv_file, bulan, tahun, log, dir_skp=None):
         pegawai_cocok = df[df[col_jp].str.upper() == nilai_jp.upper()].copy()
 
         if pegawai_cocok.empty:
-            log(f"  ⚠ Tidak ada pegawai dengan pimpinan '{nama_kelompok}'. Dilewati.")
             continue
 
         pegawai_cocok = pegawai_cocok.sort_values("NAMA")
-        log(f"\n  📂 Pimpinan: {nama_kelompok} ({len(pegawai_cocok)} pegawai):")
 
-        semua_pdf = []
-
+        # Cek dan kumpulkan pegawai yang memiliki file PDF
+        dokumen_ditemukan = []
         for _, row in pegawai_cocok.iterrows():
             if stop_event.is_set():
                 log("Proses Merge PDF per Jabatan Pimpinan dibatalkan oleh pengguna.")
@@ -158,25 +156,31 @@ def merge_pdf_by_jabatan(dir_output, csv_file, bulan, tahun, log, dir_skp=None):
                 jabatan = ""
 
             pdf_path = _find_pdf_for_pegawai(dir_output, nama_safe)
-            skp_path = _find_skp_for_pegawai(dir_skp, nama_safe) if dir_skp else None
-
             if pdf_path:
-                log(f"    ✔ {nama_raw} ({jabatan})")
-                semua_pdf.append(pdf_path)
-                if skp_path:
-                    if is_skp_already_included(pdf_path, skp_path):
-                        log(f"      + SKP E-Kinerja sudah terintegrasi di dokumen pegawai: {os.path.basename(skp_path)}")
-                    else:
-                        log(f"      + SKP E-Kinerja dilampirkan: {os.path.basename(skp_path)}")
-                        semua_pdf.append(skp_path)
-                elif dir_skp:
-                    log(f"      ⚠ SKP E-Kinerja tidak ditemukan untuk: {nama_raw}")
-            else:
-                log(f"    ⚠ PDF tidak ditemukan untuk: {nama_raw}")
+                skp_path = _find_skp_for_pegawai(dir_skp, nama_safe) if dir_skp else None
+                dokumen_ditemukan.append((nama_raw, jabatan, pdf_path, skp_path))
+
+        # Jika tidak ada PDF yang ditemukan untuk kelompok ini, lewati tanpa spam log
+        if not dokumen_ditemukan:
+            continue
+
+        log(f"\n  📂 Pimpinan: {nama_kelompok} ({len(dokumen_ditemukan)} dokumen ditemukan):")
+
+        semua_pdf = []
+        for nama_raw, jabatan, pdf_path, skp_path in dokumen_ditemukan:
+            log(f"    ✔ {nama_raw} ({jabatan})")
+            semua_pdf.append(pdf_path)
+            if skp_path:
+                if is_skp_already_included(pdf_path, skp_path):
+                    log(f"      + SKP E-Kinerja sudah terintegrasi di dokumen pegawai: {os.path.basename(skp_path)}")
+                else:
+                    log(f"      + SKP E-Kinerja dilampirkan: {os.path.basename(skp_path)}")
+                    semua_pdf.append(skp_path)
+            elif dir_skp:
+                log(f"      ⚠ SKP E-Kinerja tidak ditemukan untuk: {nama_raw}")
 
         # --- Merge PDF untuk kelompok ini ---
         if not semua_pdf:
-            log(f"\n  ❌ Tidak ada PDF yang bisa digabungkan untuk kelompok '{nama_kelompok}'.")
             continue
 
         nama_file_output = f"{nama_file_base}_{periode_str}.pdf"
@@ -191,4 +195,5 @@ def merge_pdf_by_jabatan(dir_output, csv_file, bulan, tahun, log, dir_skp=None):
         except Exception as e:
             log(f"  ❌ Gagal merge PDF untuk '{nama_kelompok}': {e}")
 
-    log(f"\n✅ Proses Merge PDF per Jabatan Pimpinan selesai. Total {total_berhasil} dokumen digabungkan.")
+    if total_berhasil > 0:
+        log(f"\n✅ Proses Merge PDF per Jabatan Pimpinan selesai. Total {total_berhasil} dokumen digabungkan.")

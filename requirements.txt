@@ -1,7 +1,7 @@
 pandas
 openpyxl
 pywin32
-PyMuPDF
+PyMuPDF<2.0.0
 selenium
 webdriver-manager
 pdfplumber

@@ -11,7 +11,12 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        'tensorflow', 'keras', 'tensorboard', 'tensorflow_estimator',
+        'cv2', 'scipy', 'matplotlib', 'IPython', 'ipykernel', 'jupyter',
+        'notebook', 'nbconvert', 'nbformat', 'pytest',
+        'unittest', 'test',
+    ],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
